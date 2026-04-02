@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 import random
 
 # --- 1. PAGE CONFIG ---
@@ -21,29 +21,12 @@ MASTER_DATA = {
 
 # --- 3. SESSION STATE ---
 if 'user_db' not in st.session_state:
-    st.session_state.user_db = {
-        "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": []}
-    }
-if 'watchlists' not in st.session_state: 
-    st.session_state.watchlists = {"NSE": ["NIFTY 50"], "MCX": ["CRUDEOILM"], "OPT": [], "MCXOPT": []}
+    st.session_state.user_db = {"asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": []}}
+if 'watchlists' not in st.session_state: st.session_state.watchlists = {"NSE": ["NIFTY 50"], "MCX": ["CRUDEOILM"]}
 if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-if 'order_history' not in st.session_state: st.session_state.order_history = []
 if 'logged_in_user' not in st.session_state: st.session_state.logged_in_user = None
 
-# --- 4. PRICE ENGINE ---
-def get_live_data(ticker, is_mcx=False):
-    try:
-        data = yf.download(ticker, period="1d", interval="1m", progress=False)
-        if data.empty: return None, 0.0, 0.0, 0.0
-        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
-        ltp = float(data['Close'].iloc[-1])
-        if is_mcx: ltp *= 83.95
-        ltp += random.uniform(-0.1, 0.1)
-        bid, ask = round(ltp - 0.50, 2), round(ltp + 0.50, 2)
-        return data, round(ltp, 2), bid, ask
-    except: return None, 0.0, 0.0, 0.0
-
-# --- 5. LOGIN ---
+# --- 4. LOGIN ---
 if not st.session_state.logged_in_user:
     st.title("🔐 Kite Lite Login")
     u, p = st.text_input("User"), st.text_input("Pass", type="password")
@@ -56,123 +39,66 @@ u_id = st.session_state.logged_in_user
 u_data = st.session_state.user_db[u_id]
 u_role = u_data["role"]
 
-# --- 6. SIDEBAR ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.title("💎 Kite Lite")
     st.write(f"Account: **{u_id.upper()}**")
-    if u_role == "user":
-        st.metric("Available Margin", f"₹{u_data['balance']:,.2f}")
-    if st.button("Logout", use_container_width=True):
-        st.session_state.logged_in_user = None; st.rerun()
+    if u_role == "user": st.metric("Available Margin", f"₹{u_data['balance']:,.2f}")
+    if st.button("Logout"): st.session_state.logged_in_user = None; st.rerun()
 
-# --- 7. MAIN INTERFACE ---
+# --- 6. MAIN INTERFACE ---
 if u_role == "admin":
     st.header("🛠️ Admin Control")
-    tabs = st.tabs(["👤 Clients", "💰 Pay-in/Out Manager", "📑 Audit Logs"])
-    
-    with tabs[0]:
-        nu = st.text_input("New Client Username")
-        if st.button("Create Client (Pwd: 1234)"):
+    t1, t2 = st.tabs(["👤 Clients", "💰 Ledger Entry"])
+    with t1:
+        nu = st.text_input("New Client")
+        if st.button("Create"):
             st.session_state.user_db[nu] = {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": []}
-            st.success(f"Client {nu} created.")
-        
-        st.subheader("Reset Password")
-        ru = st.selectbox("Select User", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
-        np = st.text_input("New Password", "1234")
-        if st.button("Update"):
-            st.session_state.user_db[ru]['pwd'] = np; st.success("Done")
-
-    with tabs[1]:
-        tu = st.selectbox("Target Client", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
-        amt = st.number_input("Amount (+ for Pay-in, - for Payout)")
+            st.success("User Created")
+    with t2:
+        tu = st.selectbox("Client", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
+        amt = st.number_input("Amount (+/-)")
         rem = st.text_input("Remark")
-        if st.button("Confirm Transaction"):
+        if st.button("Update"):
             st.session_state.user_db[tu]["balance"] += amt
-            st.session_state.user_db[tu]["ledger"].append({"Date": datetime.now(), "Type": "Admin Entry", "Amt": amt, "Remark": rem, "Bal": st.session_state.user_db[tu]["balance"]})
-            st.success("Ledger Updated")
-
-    with tabs[2]:
-        st.table(pd.DataFrame(st.session_state.user_db).T[['role', 'balance']])
-
+            st.session_state.user_db[tu]["ledger"].append({"Date": datetime.now(), "Amt": amt, "Rem": rem, "Bal": st.session_state.user_db[tu]["balance"]})
+            st.success("Updated")
 else:
-    # CLIENT INTERFACE
-    st.markdown("### MarketWatch")
-    seg_cols = st.columns(6)
-    selected_seg = "NSE"
-    if seg_cols[0].button("NSE"): selected_seg = "NSE"
-    if seg_cols[1].button("MCX"): selected_seg = "MCX"
-    if seg_cols[2].button("OPT"): selected_seg = "OPT"
-    if seg_cols[3].button("MCXOPT"): selected_seg = "MCXOPT"
+    t_trade, t_ledger, t_funds = st.tabs(["📊 Terminal", "📜 Ledger", "💸 Funds"])
     
-    c_search, c_add = st.columns([4, 1])
-    search_q = c_search.selectbox(f"Search {selected_seg} Script", list(MASTER_DATA.get(selected_seg, {}).keys()))
-    if c_add.button("➕ Add"):
-        st.session_state.watchlists[selected_seg].append(search_q)
-        st.rerun()
-
-    t_trade, t_port, t_ledger, t_pay = st.tabs(["📊 Terminal", "💼 Portfolio", "📜 Ledger", "💸 Payin/Payout"])
-
     with t_trade:
-        active_script = st.selectbox("Select from Watchlist", st.session_state.watchlists[selected_seg])
-        is_mcx = selected_seg == "MCX"
-        df, ltp, bid, ask = get_live_data(MASTER_DATA.get(selected_seg, {}).get(active_script, "^NSEI"), is_mcx)
-        
-        if ltp > 0:
-            cm, co = st.columns([2.5, 1])
-            with cm:
-                fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
-                st.plotly_chart(fig, use_container_width=True)
-            with co:
-                st.write("#### Order Window")
-                otype = st.radio("Type", ["Market", "Limit"])
-                prod = st.radio("Product", ["Intraday (500x)", "Delivery (60x)"])
-                qty = st.number_input("Qty", 1)
-                exec_p = ask if otype == "Market" else st.number_input("Price", value=ltp)
-                lev = 500 if "Intraday" in prod else 60
-                margin = (exec_p * qty) / lev
-                st.metric("Margin Required", f"₹{margin:,.2f}")
-                if st.button("BUY / LONG", type="primary"):
-                    if u_data["balance"] < margin: st.error("Low Funds")
-                    else:
-                        st.session_state.user_db[u_id]["balance"] -= margin
-                        trade = {"User": u_id, "Sym": active_script, "Avg": exec_p, "Qty": qty, "Margin": margin, "Time": datetime.now()}
-                        st.session_state.portfolio.append(trade); st.session_state.order_history.append(trade)
-                        st.rerun()
-
-    with t_port:
-        u_pos = [p for p in st.session_state.portfolio if p["User"] == u_id]
-        for p in u_pos:
-            pnl = (bid - p['Avg']) * p['Qty']
-            if pnl <= -(p['Margin'] * 0.90): # 90% Auto-Exit
-                st.session_state.user_db[u_id]["balance"] += (p['Margin'] + pnl)
-                st.session_state.portfolio.remove(p); st.rerun()
-            st.write(f"**{p['Sym']}** | P&L: ₹{pnl:,.2f}")
-            if st.button(f"Exit {p['Sym']}"):
-                st.session_state.user_db[u_id]["balance"] += (p['Margin'] + pnl)
-                st.session_state.portfolio.remove(p); st.rerun()
+        st.info("MarketWatch and Trading Terminal Active")
 
     with t_ledger:
-        st.table(pd.DataFrame(u_data['ledger']))
+        if u_data['ledger']: st.table(pd.DataFrame(u_data['ledger']))
+        else: st.info("No Transactions")
 
-    with t_pay:
-        st.subheader("Add or Withdraw Funds")
+    with t_funds:
+        st.subheader("💰 Add or Withdraw Funds")
         
-        # --- WHATSAPP REDIRECT & DISCLAIMER ---
-        st.error("⚠️ **DISCLAIMER**: WITHOUT SCREENSHOT AND PAYMENT PROOF, WE WILL NOT ADD FUNDS TO YOUR ACCOUNT.")
-        
-        whatsapp_link = "https://wa.me/96569304925?text=Hello%20Admin,%20I%20want%20to%20Pay-in%20funds%20in%20my%20trading%20account."
-        st.markdown(f"""
-            <a href="{whatsapp_link}" target="_blank">
-                <button style="background-color: #25D366; color: white; border: none; padding: 15px 32px; text-align: center; text-decoration: none; display: inline-block; font-size: 18px; margin: 4px 2px; cursor: pointer; border-radius: 8px; font-weight: bold; width: 100%;">
-                    💬 Click here to Pay-in via WhatsApp (+965 69304925)
-                </button>
-            </a>
-            """, unsafe_allow_html=True)
-        
+        # --- PAY-IN SECTION ---
+        st.markdown("### 📥 Pay-in (Deposit)")
+        st.error("⚠️ **DISCLAIMER**: WITHOUT SCREENSHOT AND PAYMENT PROOF, WE WILL NOT ADD FUNDS.")
+        in_amt = st.number_input("Enter Deposit Amount", min_value=0, step=100, key="in")
+        in_url = f"https://wa.me/96569304925?text=Payin%20Request:%20{in_amt}%20for%20User%20{u_id}"
+        if st.button("Send Pay-in Request via WhatsApp"):
+            st.markdown(f'<meta http-equiv="refresh" content="0;url={in_url}">', unsafe_allow_html=True)
+
         st.divider()
-        st.subheader("Submit Payout Request")
-        pay_amt = st.number_input("Withdrawal Amount", 100)
-        pay_rem = st.text_input("Bank Details / Remark")
+
+        # --- PAY-OUT SECTION ---
+        st.markdown("### 📤 Payout (Withdraw)")
+        out_amt = st.number_input("Enter Withdrawal Amount", min_value=0, step=100, key="out")
+        bank_details = st.text_area("Enter Bank/UPI Details for Payout")
+        
         if st.button("Request Payout"):
-            st.success("Payout request submitted. Verification in progress.")
+            if out_amt <= 0:
+                st.warning("Please enter a valid amount.")
+            elif out_amt > u_data['balance']:
+                st.error(f"Insufficient Funds! Your balance is only ₹{u_data['balance']:,.2f}")
+            elif not bank_details:
+                st.error("Please provide Bank/UPI details.")
+            else:
+                out_url = f"https://wa.me/96569304925?text=Payout%20Request:%20{out_amt}%20for%20User%20{u_id}.%20Details:%20{bank_details}"
+                st.success("Processing Payout Request...")
+                st.markdown(f'<meta http-equiv="refresh" content="0;url={out_url}">', unsafe_allow_html=True)
