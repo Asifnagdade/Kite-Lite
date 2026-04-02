@@ -6,29 +6,28 @@ from datetime import datetime, time, timedelta
 import urllib.parse
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Kite Lite Terminal", layout="wide", page_icon="💎")
+st.set_page_config(page_title="Kite Lite Pro", layout="wide", page_icon="📈")
 
-# --- DATABASE INITIALIZATION ---
+# --- MASTER DATABASE INITIALIZATION ---
 if 'user_db' not in st.session_state:
     st.session_state.user_db = {
-        "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "needs_reset": False},
-        "user1": {"pwd": "1234", "role": "user", "balance": 10000.0, "needs_reset": True}
+        "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": []},
+        "user1": {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": [], "needs_reset": True}
     }
 
 if 'banned_scripts' not in st.session_state: st.session_state.banned_scripts = [] 
 if 'logged_in_user' not in st.session_state: st.session_state.logged_in_user = None
-if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-if 'orders' not in st.session_state: st.session_state.orders = []
+if 'portfolio' not in st.session_state: st.session_state.portfolio = [] # Active Trades
+if 'trade_history' not in st.session_state: st.session_state.trade_history = [] # Closed Trades
 
-# Watchlists
-if 'wl_nse' not in st.session_state: st.session_state.wl_nse = ["^NSEI", "^NSEBANK", "RELIANCE.NS", "SBIN.NS", "TCS.NS"]
-if 'wl_mcx' not in st.session_state: st.session_state.wl_mcx = ["GC=F", "CL=F", "SI=F", "NG=F"]
+# Admin Settings
+admin_whatsapp = "96569304925"
 
-# --- LOGIN SYSTEM ---
+# --- LOGIN & SECURITY ---
 if not st.session_state.logged_in_user:
-    cols = st.columns([1, 1.5, 1])
+    cols = st.columns([1, 1.2, 1])
     with cols[1]:
-        st.title("🔐 Kite Lite Login")
+        st.title("🔐 Kite Lite Pro Login")
         u_id = st.text_input("Username")
         u_pwd = st.text_input("Password", type="password")
         if st.button("Login", use_container_width=True):
@@ -40,141 +39,162 @@ if not st.session_state.logged_in_user:
 
 current_user = st.session_state.logged_in_user
 user_data = st.session_state.user_db[current_user]
-admin_whatsapp = "96569304925" 
 
-# --- FORCE PASSWORD RESET ---
+# Force Password Reset
 if user_data.get("needs_reset", False):
-    st.warning("🔒 First Time Login: Password reset required.")
-    new_p = st.text_input("New Password", type="password")
-    conf_p = st.text_input("Confirm Password", type="password")
-    if st.button("Set Password"):
-        if new_p == conf_p and len(new_p) >= 4:
-            st.session_state.user_db[current_user]["pwd"] = new_p
-            st.session_state.user_db[current_user]["needs_reset"] = False
-            st.success("Success! Please wait...")
-            st.rerun()
-        else: st.error("Passwords must match and be min 4 characters.")
+    new_p = st.text_input("Security Alert: Set New Password", type="password")
+    if st.button("Update Password"):
+        st.session_state.user_db[current_user]["pwd"] = new_p
+        st.session_state.user_db[current_user]["needs_reset"] = False
+        st.rerun()
     st.stop()
 
-# --- SIDEBAR & ADMIN CONTROLS ---
+# --- SIDEBAR & NAVIGATION ---
 with st.sidebar:
-    st.title("💎 Kite Lite")
-    st.write(f"User: **{current_user}** ({user_data['role'].upper()})")
-    st.metric("Margin Available", f"₹{user_data['balance']:,.2f}")
+    st.title("💎 Kite Lite Pro")
+    st.write(f"Logged in: **{current_user}**")
+    st.metric("Total Margin", f"₹{user_data['balance']:,.2f}")
     
+    # Funds Request (WhatsApp Link)
     if user_data["role"] == "user":
         st.divider()
-        msg = urllib.parse.quote(f"Hello Admin, I am {current_user}. Please update my funds.")
-        st.markdown(f'<a href="https://wa.me/{admin_whatsapp}?text={msg}" target="_blank"><button style="width:100%; background-color:#25D366; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold;">💬 Pay-in Request</button></a>', unsafe_allow_html=True)
+        st.subheader("Fund Requests")
+        req_type = st.radio("Type", ["Pay-in", "Payout"])
+        req_amt = st.number_input("Amount", min_value=0)
+        if st.button("Send Request to Admin"):
+            msg = urllib.parse.quote(f"Admin, I am {current_user}. I am requesting a {req_type} of ₹{req_amt}.")
+            st.markdown(f'<a href="https://wa.me/{admin_whatsapp}?text={msg}" target="_blank">Redirect to WhatsApp</a>', unsafe_allow_html=True)
 
+    st.divider()
     segment = st.radio("Market", ["NSE Futures", "MCX Commodity"])
-    ticker = st.selectbox("Select Script", st.session_state.wl_nse if segment == "NSE Futures" else st.session_state.wl_mcx)
-    if ticker in st.session_state.banned_scripts: st.error("🚫 SCRIPT BANNED")
-
-    if st.button("Logout"):
+    watch_list = ["^NSEI", "^NSEBANK", "RELIANCE.NS", "SBIN.NS", "GC=F", "CL=F", "SI=F", "NG=F"]
+    ticker = st.selectbox("Select Script", watch_list)
+    
+    if st.button("Log Out"):
         st.session_state.logged_in_user = None
         st.rerun()
 
-    if user_data["role"] == "admin":
-        st.divider()
-        with st.expander("🛠️ MASTER ADMIN CONTROL"):
-            # User & Password Reset
-            st.subheader("User Management")
-            new_u = st.text_input("New User ID")
-            if st.button("Create User"):
-                if new_u and new_u not in st.session_state.user_db:
-                    st.session_state.user_db[new_u] = {"pwd": "1234", "role": "user", "balance": 0.0, "needs_reset": True}
-                    st.success(f"Created {new_u}")
-            
-            user_list = [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"]
-            if user_list:
-                res_u = st.selectbox("Select User to Reset", user_list)
-                if st.button("Reset PWD to 1234"):
-                    st.session_state.user_db[res_u]["pwd"] = "1234"
-                    st.session_state.user_db[res_u]["needs_reset"] = True
-                    st.warning(f"Reset {res_u}")
-
-            # Funds
-            st.divider()
-            st.subheader("Balance Control")
-            f_u = st.selectbox("Target User", user_list, key="f_sel")
-            f_amt = st.number_input("Amount", value=0.0)
-            if st.button("Update Balance"):
-                st.session_state.user_db[f_u]["balance"] += f_amt
-                st.rerun()
-
-            # Ban Control
-            st.divider()
-            st.subheader("Ban System")
-            ban_t = st.text_input("Symbol (eg: CL=F)")
-            if st.button("BAN SCRIPT"): st.session_state.banned_scripts.append(ban_t)
-            if st.button("UNBAN SCRIPT"): 
-                if ban_t in st.session_state.banned_scripts: st.session_state.banned_scripts.remove(ban_t)
-
-# --- TRADE LOGIC ---
-def get_data(symbol):
+# --- HELPER FUNCTIONS ---
+def get_live_data(symbol):
     df = yf.download(symbol, period="1d", interval="1m", progress=False)
     if not df.empty:
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         return df, float(df['Close'].iloc[-1])
-    return df, 0.0
+    return pd.DataFrame(), 0.0
 
-def validate_entry(symbol, mkt, price, ltp, margin):
-    now = datetime.now().time()
-    if symbol in st.session_state.banned_scripts: return False, "Script is BANNED."
-    if mkt == "NSE Futures":
-        if not (time(9,16) <= now <= time(15,30)): return False, "NSE Closed"
-    else:
-        if not (time(9,1) <= now <= time(23,30)): return False, "MCX Closed"
-    if price > (ltp * 1.04) or price < (ltp * 0.96): return False, "4% Limit Violation"
-    if user_data["balance"] < margin: return False, "Insufficient Funds"
-    return True, "OK"
+# --- MAIN NAVIGATION TABS ---
+# Admin sees Monitoring, User sees Terminal
+if user_data["role"] == "admin":
+    main_tabs = st.tabs(["📊 Terminal", "👁️ Admin Monitor", "👤 User Funds", "🚫 Ban List"])
+else:
+    main_tabs = st.tabs(["📊 Terminal", "💼 Portfolio", "📖 Ledger", "📜 Rules"])
 
-# --- INTERFACE ---
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Terminal", "📝 Trade Log", "💼 Portfolio", "📜 Rules"])
-data, live_price = get_data(ticker)
-
-with tab1:
+# --- TAB 1: TERMINAL (Common for both) ---
+with main_tabs[0]:
+    data, ltp = get_live_data(ticker)
     if not data.empty:
         c1, c2 = st.columns([3, 1])
         with c1:
             fig = go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])])
-            fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
+            fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.metric("LTP", f"₹{live_price:,.2f}")
-            qty = st.number_input("Qty", min_value=1, value=50)
-            order_p = st.number_input("Order Price", value=live_price)
-            margin_req = (order_p * qty) / 500
+            st.subheader("Order Window")
+            st.metric("LTP", f"₹{ltp:,.2f}")
+            order_type = st.radio("Product", ["Intraday (500x)", "Delivery (1x)"])
+            qty = st.number_input("Quantity", min_value=1, value=1)
+            limit_p = st.number_input("Price", value=ltp)
+            
+            leverage = 500 if "Intraday" in order_type else 1
+            margin_req = (limit_p * qty) / leverage
+            st.write(f"Margin Required: **₹{margin_req:,.2f}**")
+            
             if st.button("BUY / LONG", use_container_width=True, type="primary"):
-                ok, msg = validate_entry(ticker, segment, order_p, live_price, margin_req)
-                if ok:
-                    st.session_state.user_db[current_user]["balance"] -= margin_req
-                    trade = {"Time": datetime.now(), "Symbol": ticker, "Qty": qty, "Price": order_p, "Margin": margin_req, "User": current_user}
-                    st.session_state.portfolio.append(trade); st.session_state.orders.append(trade)
-                    st.success("Trade Placed!")
-                else: st.error(msg)
-
-with tab3:
-    st.subheader("Positions")
-    for i, pos in enumerate(st.session_state.portfolio):
-        if pos["User"] == current_user:
-            pnl = (live_price - pos['Price']) * pos['Qty']
-            if pnl <= -(0.9 * pos['Margin']): # 90% LOSS RULE
-                st.session_state.user_db[current_user]["balance"] += (pos['Margin'] + pnl)
-                st.session_state.portfolio.pop(i); st.warning("Auto Square-off (90% Loss)"); st.rerun()
-            st.write(f"**{pos['Symbol']}** | P&L: ₹{pnl:,.2f}")
-            if st.button(f"SQUARE OFF {pos['Symbol']}", key=f"ex_{i}"):
-                if (datetime.now() - pos["Time"]) < timedelta(minutes=2): # 2-MIN HOLD RULE
-                    st.error("Hold for 2 Minutes!")
+                # Basic Rules Check
+                if ticker in st.session_state.banned_scripts: st.error("Banned Script!")
+                elif user_data["balance"] < margin_req: st.error("Insufficient Funds!")
+                elif limit_p > (ltp * 1.04) or limit_p < (ltp * 0.96): st.error("LTP Rule 4% Violation")
                 else:
-                    st.session_state.user_db[current_user]["balance"] += (pos['Margin'] + pnl)
-                    st.session_state.portfolio.pop(i); st.rerun()
+                    st.session_state.user_db[current_user]["balance"] -= margin_req
+                    st.session_state.portfolio.append({
+                        "User": current_user, "Time": datetime.now(), "Symbol": ticker,
+                        "Qty": qty, "Price": limit_p, "Margin": margin_req, "Type": order_type
+                    })
+                    st.success("Order Placed Successfully!")
 
-with tab4:
-    st.header("📋 Trading Rules")
-    st.error("🚫 2-MINUTE HOLDING RULE IS MANDATORY.")
-    st.write("• **NSE:** 09:16-03:30 | **MCX:** 09:01-11:30 PM")
-    st.write("• **MCX Expiry:** Crude/NG 1 day before, Metals 5 days before.")
-    st.write("• **Limits:** Orders within 4% of LTP. Banned scripts block entry.")
-    st.write("• **Auto-Exit:** Automatic square-off at 90% capital loss.")
+# --- USER SPECIFIC TABS ---
+if user_data["role"] == "user":
+    # PORTFOLIO TAB
+    with main_tabs[1]:
+        st.subheader("🏃 Running Positions")
+        user_active = [p for p in st.session_state.portfolio if p["User"] == current_user]
+        if user_active:
+            for i, pos in enumerate(st.session_state.portfolio):
+                if pos["User"] == current_user:
+                    pnl = (ltp - pos['Price']) * pos['Qty']
+                    st.write(f"**{pos['Symbol']}** | Qty: {pos['Qty']} | P&L: :green[₹{pnl:,.2f}]" if pnl >=0 else f"**{pos['Symbol']}** | Qty: {pos['Qty']} | P&L: :red[₹{pnl:,.2f}]")
+                    if st.button(f"Square Off {i}", key=f"sq_{i}"):
+                        if (datetime.now() - pos["Time"]) < timedelta(minutes=2):
+                            st.error("Hold for 2 minutes!")
+                        else:
+                            st.session_state.user_db[current_user]["balance"] += (pos['Margin'] + pnl)
+                            st.session_state.trade_history.append({**pos, "ExitPrice": ltp, "PnL": pnl, "ExitTime": datetime.now()})
+                            st.session_state.portfolio.pop(i); st.rerun()
+        else: st.info("No active trades.")
+
+    # LEDGER TAB
+    with main_tabs[2]:
+        st.subheader("📊 Financial Ledger")
+        st.write(f"Current Available Balance: **₹{user_data['balance']:,.2f}**")
+        if user_data["ledger"]:
+            df_ledger = pd.DataFrame(user_data["ledger"])
+            st.table(df_ledger)
+        else: st.info("No transaction history yet.")
+
+# --- ADMIN SPECIFIC TABS ---
+if user_data["role"] == "admin":
+    # MONITOR TAB
+    with main_tabs[1]:
+        st.subheader("🕵️ Live Monitoring (All Users)")
+        if st.session_state.portfolio:
+            df_monitor = pd.DataFrame(st.session_state.portfolio)
+            st.dataframe(df_monitor, use_container_width=True)
+        else: st.info("No users are currently trading.")
+        
+        st.divider()
+        st.subheader("📜 Master Trade History")
+        if st.session_state.trade_history:
+            st.dataframe(pd.DataFrame(st.session_state.trade_history), use_container_width=True)
+
+    # USER FUNDS TAB
+    with main_tabs[2]:
+        st.subheader("Manage User Balance & ID")
+        new_uid = st.text_input("New User ID")
+        if st.button("Create ID"):
+            st.session_state.user_db[new_uid] = {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": [], "needs_reset": True}
+            st.success(f"ID {new_uid} created with ₹0 balance.")
+        
+        st.divider()
+        target_u = st.selectbox("Select User", [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"])
+        f_type = st.radio("Action", ["Deposit (Pay-in)", "Withdraw (Payout)"])
+        f_amt = st.number_input("Amount", key="admin_amt")
+        if st.button("Confirm Transaction"):
+            final_amt = f_amt if f_type == "Deposit (Pay-in)" else -f_amt
+            st.session_state.user_db[target_u]["balance"] += final_amt
+            st.session_state.user_db[target_u]["ledger"].append({
+                "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Type": f_type, "Amount": f_amt, "Status": "Success"
+            })
+            st.success(f"Successfully updated {target_u}'s balance.")
+
+    # BAN LIST TAB
+    with main_tabs[3]:
+        st.subheader("Market Ban Control")
+        ban_sym = st.text_input("Enter Symbol to Ban")
+        if st.button("Ban Now"): st.session_state.banned_scripts.append(ban_sym)
+        st.write("Currently Banned:", st.session_state.banned_scripts)
+
+with main_tabs[-1] if user_data["role"] == "user" else st.empty():
+    st.header("📋 Official Trading Rules")
+    st.warning("All trades must be held for 2 minutes.")
+    st.write("NSE: 09:16-15:30 | MCX: 09:01-23:30")
