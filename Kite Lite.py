@@ -15,17 +15,13 @@ if 'user_db' not in st.session_state:
         "user1": {"pwd": "1234", "role": "user", "balance": 10000.0, "needs_reset": True}
     }
 
-if 'banned_scripts' not in st.session_state:
-    st.session_state.banned_scripts = [] 
-
+if 'banned_scripts' not in st.session_state: st.session_state.banned_scripts = [] 
 if 'logged_in_user' not in st.session_state: st.session_state.logged_in_user = None
 if 'portfolio' not in st.session_state: st.session_state.portfolio = []
 
-# --- NSE & MCX WATCHLIST ---
-if 'wl_nse' not in st.session_state:
-    st.session_state.wl_nse = ["^NSEI", "^NSEBANK", "RELIANCE.NS", "SBIN.NS", "HDFCBANK.NS"]
-if 'wl_mcx' not in st.session_state:
-    st.session_state.wl_mcx = ["GC=F", "CL=F", "SI=F", "NG=F"] # Gold, Crude, Silver, Natural Gas
+# Watchlists
+if 'wl_nse' not in st.session_state: st.session_state.wl_nse = ["^NSEI", "^NSEBANK", "RELIANCE.NS", "SBIN.NS"]
+if 'wl_mcx' not in st.session_state: st.session_state.wl_mcx = ["GC=F", "CL=F", "SI=F", "NG=F"]
 
 # --- LOGIN SYSTEM ---
 if not st.session_state.logged_in_user:
@@ -44,49 +40,74 @@ if not st.session_state.logged_in_user:
 current_user = st.session_state.logged_in_user
 user_data = st.session_state.user_db[current_user]
 
+# Force Password Reset for Users
 if user_data.get("needs_reset", False):
     st.warning("🔒 Pehli baar login: Password badalna zaroori hai.")
     new_p = st.text_input("Naya Password", type="password")
+    conf_p = st.text_input("Confirm Password", type="password")
     if st.button("Save Password"):
-        st.session_state.user_db[current_user]["pwd"] = new_p
-        st.session_state.user_db[current_user]["needs_reset"] = False
-        st.rerun()
+        if new_p == conf_p and len(new_p) >= 4:
+            st.session_state.user_db[current_user]["pwd"] = new_p
+            st.session_state.user_db[current_user]["needs_reset"] = False
+            st.success("Password Updated!")
+            st.rerun()
+        else: st.error("Passwords match nahi ho rahe ya bahut chote hain.")
     st.stop()
 
-# --- SIDEBAR & ADMIN PANEL ---
+# --- SIDEBAR & MASTER ADMIN ---
 with st.sidebar:
     st.title("💎 Kite Lite")
     st.write(f"Account: **{current_user}**")
     st.metric("Balance", f"₹{user_data['balance']:,.2f}")
     
-    segment = st.radio("Market Segment", ["NSE Futures", "MCX Commodity"])
+    segment = st.radio("Segment", ["NSE Futures", "MCX Commodity"])
     ticker = st.selectbox("Select Script", st.session_state.wl_nse if segment == "NSE Futures" else st.session_state.wl_mcx)
     
     if st.button("Logout"):
         st.session_state.logged_in_user = None
         st.rerun()
 
+    # --- FULL ADMIN CONTROLS ---
     if user_data["role"] == "admin":
         st.divider()
-        with st.expander("🛠️ MASTER ADMIN"):
-            # User Management
-            new_u = st.text_input("New User ID")
-            if st.button("Create"):
-                st.session_state.user_db[new_u] = {"pwd": "1234", "role": "user", "balance": 0.0, "needs_reset": True}
-            
-            # Funds
-            st.divider()
-            target_u = st.selectbox("Client", [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"])
-            amt = st.number_input("Amount")
-            if st.button("Update Funds"):
-                st.session_state.user_db[target_u]["balance"] += amt
+        st.subheader("🛠️ MASTER ADMIN PANEL")
+        
+        # 1. Create User
+        with st.expander("👤 Create New User"):
+            new_u = st.text_input("Enter New User ID")
+            if st.button("Create Account"):
+                if new_u and new_u not in st.session_state.user_db:
+                    st.session_state.user_db[new_u] = {"pwd": "1234", "role": "user", "balance": 0.0, "needs_reset": True}
+                    st.success(f"User {new_u} created (Default PWD: 1234)")
+                else: st.error("User already exists or invalid.")
+
+        # 2. Reset Password (FIXED OPTION)
+        with st.expander("🔑 Reset User Password"):
+            user_list = [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"]
+            if user_list:
+                res_u = st.selectbox("Select User to Reset", user_list)
+                if st.button("Reset to 1234"):
+                    st.session_state.user_db[res_u]["pwd"] = "1234"
+                    st.session_state.user_db[res_u]["needs_reset"] = True
+                    st.warning(f"Password for {res_u} reset to '1234'.")
+            else: st.write("No users found.")
+
+        # 3. Update Funds
+        with st.expander("💰 Manage Funds"):
+            fund_u = st.selectbox("Select Client", user_list, key="fund_key")
+            amt = st.number_input("Add/Remove Amount", value=0.0)
+            if st.button("Update Balance"):
+                st.session_state.user_db[fund_u]["balance"] += amt
+                st.success(f"Balance updated for {fund_u}")
                 st.rerun()
-            
-            # Ban Scripts
-            st.divider()
-            b_script = st.text_input("Ban/Unban (eg: CL=F)")
+
+        # 4. Ban Scripts
+        with st.expander("🚫 Ban Scripts"):
+            b_script = st.text_input("Script to Ban/Unban (eg: CL=F)")
             if st.button("BAN"): st.session_state.banned_scripts.append(b_script)
-            if st.button("UNBAN"): st.session_state.banned_scripts.remove(b_script)
+            if st.button("UNBAN"): 
+                if b_script in st.session_state.banned_scripts: st.session_state.banned_scripts.remove(b_script)
+            st.write("Current Banned:", st.session_state.banned_scripts)
 
 # --- TRADE LOGIC ---
 def get_data(symbol):
@@ -98,17 +119,14 @@ def get_data(symbol):
 
 def validate_trade(symbol, market_type, price, ltp, margin):
     now = datetime.now().time()
-    # Market Timing
     if market_type == "NSE Futures":
         if not (time(9,16) <= now <= time(15,30)): return False, "NSE Market Closed"
-    else: # MCX
+    else:
         if not (time(9,1) <= now <= time(23,30)): return False, "MCX Market Closed"
     
-    # Rules
     if symbol in st.session_state.banned_scripts: return False, "🚫 Script BANNED"
     if price > (ltp * 1.04) or price < (ltp * 0.96): return False, "4% Limit Rule Violation"
     if user_data["balance"] < margin: return False, "Insufficient Margin"
-    
     return True, "Success"
 
 # --- INTERFACE ---
@@ -128,7 +146,6 @@ with tab1:
             order_p = st.number_input("Price", value=live_price)
             margin_needed = (order_p * qty) / 500
             st.write(f"Margin: ₹{margin_needed:,.2f}")
-            
             if st.button("BUY / LONG", use_container_width=True, type="primary"):
                 ok, msg = validate_trade(ticker, segment, order_p, live_price, margin_needed)
                 if ok:
@@ -140,11 +157,10 @@ with tab1:
                 else: st.error(msg)
 
 with tab2:
-    st.subheader("Positions")
+    st.subheader("Active Positions")
     for i, pos in enumerate(st.session_state.portfolio):
         if pos["User"] == current_user:
             pnl = (live_price - pos['Price']) * pos['Qty']
-            # 90% Rule
             if pnl <= -(0.9 * pos['Margin']):
                 st.session_state.user_db[current_user]["balance"] += (pos['Margin'] + pnl)
                 st.session_state.portfolio.pop(i); st.rerun()
@@ -160,6 +176,5 @@ with tab2:
 with tab3:
     st.header("📋 Trading Rules")
     st.error("MANDATORY: 2-Minute holding time required for all trades.")
-    st.write("• **NSE:** 09:16 - 03:30 | **MCX:** 09:01 - 11:30 PM")
-    st.write("• **Execution:** Limit orders within 4% of LTP.")
-    st.write("• **MCX Expiry:** Exit Crude/NG 1 day before expiry.")
+    st.write("• NSE: 09:16-03:30 | MCX: 09:01-11:30 PM")
+    st.write("• Limit orders max 4% from LTP.")
