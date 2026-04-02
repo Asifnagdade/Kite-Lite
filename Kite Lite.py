@@ -8,7 +8,7 @@ import random
 # --- 1. PAGE CONFIG ---
 st.set_page_config(page_title="Kite Lite Pro", layout="wide", page_icon="📈")
 
-# --- 2. MASTER DATA ---
+# --- 2. MASTER DATA (MCX & NSE) ---
 MASTER_DATA = {
     "NSE": {"NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "RELIANCE": "RELIANCE.NS", "SBIN": "SBIN.NS"},
     "MCX": {
@@ -24,10 +24,10 @@ if 'user_db' not in st.session_state:
     st.session_state.user_db = {
         "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": []}
     }
-if 'order_history' not in st.session_state: st.session_state.order_history = []
+if 'watchlists' not in st.session_state: 
+    st.session_state.watchlists = {"NSE": ["NIFTY 50"], "MCX": ["CRUDEOILM"], "OPT": [], "MCXOPT": []}
 if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-if 'nse_watchlist' not in st.session_state: st.session_state.nse_watchlist = ["NIFTY 50"]
-if 'mcx_watchlist' not in st.session_state: st.session_state.mcx_watchlist = ["CRUDEOILM"]
+if 'order_history' not in st.session_state: st.session_state.order_history = []
 if 'logged_in_user' not in st.session_state: st.session_state.logged_in_user = None
 
 # --- 4. PRICE ENGINE ---
@@ -56,120 +56,112 @@ u_id = st.session_state.logged_in_user
 u_data = st.session_state.user_db[u_id]
 u_role = u_data["role"]
 
-# --- 6. SIDEBAR (Conditional) ---
+# --- 6. SIDEBAR (Clean Admin / Detailed User) ---
 with st.sidebar:
     st.title("💎 Kite Lite")
-    st.write(f"User: **{u_id.upper()}**")
-    
-    # Balance & Watchlist ONLY for Clients
+    st.write(f"Account: **{u_id.upper()}**")
     if u_role == "user":
-        st.metric("My Balance", f"₹{u_data['balance']:,.2f}")
-        st.divider()
-        seg = st.selectbox("Segment", ["MCX", "NSE"])
-        to_add = st.selectbox("Search", list(MASTER_DATA[seg].keys()))
-        if st.button("Add to Watchlist"):
-            name = f"{to_add} FUT"
-            if seg == "NSE": st.session_state.nse_watchlist.append(name)
-            else: st.session_state.mcx_watchlist.append(name)
-            st.rerun()
-    
+        st.metric("Available Margin", f"₹{u_data['balance']:,.2f}")
     if st.button("Logout", use_container_width=True):
         st.session_state.logged_in_user = None; st.rerun()
 
 # --- 7. MAIN INTERFACE ---
 if u_role == "admin":
-    # ADMIN VIEW: Focus on Management
-    st.header("🛠️ Admin Control Center")
-    t1, t2, t3 = st.tabs(["👤 User Management", "💰 Pay-in / Payout", "📋 Live Audit"])
+    # ADMIN PANEL: Management Only
+    st.header("🛠️ Admin Control")
+    tabs = st.tabs(["👤 Clients", "💰 Pay-in/Out Manager", "📑 Audit Logs"])
     
-    with t1:
-        c_a, c_b = st.columns(2)
-        with c_a:
-            st.subheader("Create New Client")
-            nu = st.text_input("New Username")
-            if st.button("Create User"):
-                if nu not in st.session_state.user_db:
-                    st.session_state.user_db[nu] = {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": []}
-                    st.success(f"User {nu} created with 0 balance.")
-                else: st.error("User already exists!")
-        with c_b:
-            st.subheader("Reset Password")
-            ru = st.selectbox("Select Client", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
-            np = st.text_input("Set Password", value="1234")
-            if st.button("Update Password"):
-                st.session_state.user_db[ru]["pwd"] = np
-                st.success("Password Updated")
+    with tabs[0]:
+        nu = st.text_input("New Client Username")
+        if st.button("Create Client (Pwd: 1234)"):
+            st.session_state.user_db[nu] = {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": []}
+            st.success(f"Client {nu} created.")
+        
+        st.subheader("Reset Password")
+        ru = st.selectbox("Select User", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
+        np = st.text_input("New Password", "1234")
+        if st.button("Update"):
+            st.session_state.user_db[ru]['pwd'] = np; st.success("Done")
 
-    with t2:
-        st.subheader("Transaction Manager")
-        tu = st.selectbox("Select Target User", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
-        amt = st.number_input("Amount (+ for Deposit, - for Withdrawal)")
-        remark = st.text_input("Entry Note (e.g. Cash Pay-in)")
-        if st.button("Process Entry"):
+    with tabs[1]:
+        tu = st.selectbox("Target Client", [k for k, v in st.session_state.user_db.items() if v['role'] == 'user'])
+        amt = st.number_input("Amount (+ for Pay-in, - for Payout)")
+        rem = st.text_input("Remark (e.g. Cash Deposit)")
+        if st.button("Confirm Transaction"):
             st.session_state.user_db[tu]["balance"] += amt
-            st.session_state.user_db[tu]["ledger"].append({"Date": datetime.now(), "Amount": amt, "Remark": remark, "Closing": st.session_state.user_db[tu]["balance"]})
+            st.session_state.user_db[tu]["ledger"].append({"Date": datetime.now(), "Type": "Admin Entry", "Amt": amt, "Remark": rem, "Bal": st.session_state.user_db[tu]["balance"]})
             st.success("Ledger Updated")
 
-    with t3:
-        st.subheader("User Directory")
+    with tabs[2]:
         st.table(pd.DataFrame(st.session_state.user_db).T[['role', 'balance']])
 
 else:
-    # CLIENT VIEW: Full Trading Power
-    tabs = st.tabs(["📊 Terminal", "💼 Portfolio", "📜 Ledger", "📑 Orders"])
+    # CLIENT INTERFACE: Full Trading Power
+    # Watchlist Header (As per your Image)
+    st.markdown("### MarketWatch")
+    seg_cols = st.columns(6)
+    selected_seg = "NSE"
+    if seg_cols[0].button("NSE"): selected_seg = "NSE"
+    if seg_cols[1].button("MCX"): selected_seg = "MCX"
+    if seg_cols[2].button("OPT"): selected_seg = "OPT"
+    if seg_cols[3].button("MCXOPT"): selected_seg = "MCXOPT"
     
-    # TERMINAL (Logic: Market Buy @ Ask)
-    with tabs[0]:
-        c1, c2 = st.columns(2)
-        sel_n = c1.selectbox("NSE List", st.session_state.nse_watchlist)
-        sel_m = c2.selectbox("MCX List", st.session_state.mcx_watchlist)
-        active = st.radio("Select View", [sel_n, sel_m], horizontal=True)
-        base = active.split(' ')[0]
-        is_mcx = base in MASTER_DATA["MCX"]
-        df, ltp, bid, ask = get_live_data(MASTER_DATA["MCX"].get(base) or MASTER_DATA["NSE"].get(base), is_mcx)
+    # Search & Add (Image Style)
+    c_search, c_add = st.columns([4, 1])
+    search_q = c_search.selectbox(f"Search {selected_seg} Script", list(MASTER_DATA.get(selected_seg, {}).keys()))
+    if c_add.button("➕ Add"):
+        st.session_state.watchlists[selected_seg].append(search_q)
+        st.rerun()
 
+    t_trade, t_port, t_ledger, t_pay = st.tabs(["📊 Terminal", "💼 Portfolio", "📜 Ledger", "💸 Payin/Payout"])
+
+    with t_trade:
+        active_script = st.selectbox("Select from Watchlist", st.session_state.watchlists[selected_seg])
+        is_mcx = selected_seg == "MCX"
+        df, ltp, bid, ask = get_live_data(MASTER_DATA.get(selected_seg, {}).get(active_script, "^NSEI"), is_mcx)
+        
         if ltp > 0:
             cm, co = st.columns([2.5, 1])
             with cm:
                 fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
+                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, title=active_script)
                 st.plotly_chart(fig, use_container_width=True)
-                st.metric("Market Price (Buy At)", f"₹{ask}")
             with co:
-                st.write("### Order Window")
+                st.write("#### Order Window")
                 otype = st.radio("Type", ["Market", "Limit"])
                 prod = st.radio("Product", ["Intraday (500x)", "Delivery (60x)"])
-                qty = st.number_input("Qty", min_value=1)
+                qty = st.number_input("Qty", 1)
                 exec_p = ask if otype == "Market" else st.number_input("Price", value=ltp)
                 lev = 500 if "Intraday" in prod else 60
                 margin = (exec_p * qty) / lev
-                st.write(f"Margin: **₹{margin:,.2f}**")
-                if st.button("PLACE BUY ORDER", type="primary"):
-                    if u_data["balance"] < margin: st.error("Low Balance")
+                st.metric("Margin Required", f"₹{margin:,.2f}")
+                if st.button("BUY / LONG", type="primary"):
+                    if u_data["balance"] < margin: st.error("Low Funds")
                     else:
                         st.session_state.user_db[u_id]["balance"] -= margin
-                        trade = {"User": u_id, "Symbol": active, "Avg": exec_p, "Qty": qty, "Margin": margin, "Time": datetime.now(), "Status": "Open"}
-                        st.session_state.portfolio.append(trade)
-                        st.session_state.order_history.append(trade)
-                        st.rerun()
+                        trade = {"User": u_id, "Sym": active_script, "Avg": exec_p, "Qty": qty, "Margin": margin, "Time": datetime.now()}
+                        st.session_state.portfolio.append(trade); st.session_state.order_history.append(trade)
+                        st.success("Trade Executed")
 
-    # PORTFOLIO (Logic: 90% Auto-Square Off)
-    with tabs[1]:
+    with t_port:
         u_pos = [p for p in st.session_state.portfolio if p["User"] == u_id]
-        for pos in u_pos:
-            pnl = (bid - pos['Avg']) * pos['Qty']
-            if pnl <= -(pos['Margin'] * 0.90): # Auto-Exit
-                st.session_state.user_db[u_id]["balance"] += (pos['Margin'] + pnl)
-                st.session_state.portfolio.remove(pos); st.rerun()
-            st.write(f"**{pos['Symbol']}** | P&L: ₹{pnl:,.2f}")
-            if st.button(f"Square Off {pos['Symbol']}"):
-                if (datetime.now() - pos["Time"]) < timedelta(minutes=2): st.error("Hold 2m")
-                else:
-                    st.session_state.user_db[u_id]["balance"] += (pos['Margin'] + pnl)
-                    st.session_state.portfolio.remove(pos); st.rerun()
+        for p in u_pos:
+            pnl = (bid - p['Avg']) * p['Qty']
+            if pnl <= -(p['Margin'] * 0.90): # 90% Auto-Exit
+                st.session_state.user_db[u_id]["balance"] += (p['Margin'] + pnl)
+                st.session_state.portfolio.remove(p); st.rerun()
+            st.write(f"**{p['Sym']}** | P&L: ₹{pnl:,.2f}")
+            if st.button(f"Exit {p['Sym']}"):
+                st.session_state.user_db[u_id]["balance"] += (p['Margin'] + pnl)
+                st.session_state.portfolio.remove(p); st.rerun()
 
-    with tabs[2]:
-        st.table(pd.DataFrame(u_data.get("ledger", [])))
-        
-    with tabs[3]:
-        st.table(pd.DataFrame([o for o in st.session_state.order_history if o["User"] == u_id]))
+    with t_ledger:
+        st.table(pd.DataFrame(u_data['ledger']))
+
+    with t_pay:
+        st.subheader("Add or Withdraw Funds")
+        st.info("For Instant Pay-in, Contact Admin at: **+91-XXXXXXXXXX** (Your Number)")
+        pay_type = st.radio("Transaction Type", ["Pay-in Request", "Payout Request"])
+        pay_amt = st.number_input("Amount", 100)
+        if st.button("Submit Request"):
+            st.success("Request sent to Admin. Balance will update after verification.")
