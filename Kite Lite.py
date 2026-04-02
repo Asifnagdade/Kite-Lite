@@ -1,92 +1,110 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime
 
-# --- 1. PERMANENT STORAGE ENGINE ---
-DB_FILE = "user_database.json"
+# --- 1. PERMANENT DATABASE (Fixes Login/ID Issue) ---
+DB_FILE = "trading_app_db.json"
 
 def load_db():
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    # Default Admin ID
-    return {"asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": [], "first_login": False}}
+        with open(DB_FILE, "r") as f: return json.load(f)
+    # Default Admin Access
+    return {"users": {"asifnagdade": {"pwd": "Khadija@12", "role": "admin", "bal": 0.0, "first": False}}}
 
 def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f)
+    with open(DB_FILE, "w") as f: json.dump(data, f)
 
-# --- 2. CONFIG & SYNC ---
-st.set_page_config(page_title="Kite Lite Pro", layout="wide")
+if 'db' not in st.session_state: 
+    st.session_state.db = load_db()
 
-# Database ko memory mein load karna
-if 'user_db' not in st.session_state:
-    st.session_state.user_db = load_db()
-if 'logged_in_user' not in st.session_state:
-    st.session_state.logged_in_user = None
+# --- 2. MOBILE UI STYLING ---
+st.set_page_config(page_title="Kite Lite", layout="wide")
+st.markdown("""
+    <style>
+    .stApp { background-color: #111; color: white; }
+    .segment-container { display: flex; gap: 10px; margin-bottom: 20px; }
+    .segment-btn { 
+        background: #333; padding: 5px 20px; border-radius: 5px; 
+        border: 1px solid #444; color: white; cursor: pointer;
+    }
+    .active-segment { border-bottom: 2px solid orange; color: orange; }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- 3. LOGIN SYSTEM ---
-if not st.session_state.logged_in_user:
-    st.title("🔐 Kite Lite Login")
-    u_in = st.text_input("Username").strip()
-    p_in = st.text_input("Password", type="password").strip()
-    
+# --- 3. LOGIN ENGINE ---
+if 'user' not in st.session_state:
+    st.title("🛡️ Kite Lite Login")
+    u = st.text_input("Username").strip()
+    p = st.text_input("Password", type="password").strip()
     if st.button("Login"):
-        # Direct check from file-synced database
-        db = st.session_state.user_db
-        if u_in in db:
-            if db[u_in]["pwd"] == p_in:
-                st.session_state.logged_in_user = u_in
-                st.rerun()
-            else: st.error("❌ Galat Password!")
-        else: st.error(f"❌ ID '{u_in}' nahi mili!")
+        db = st.session_state.db["users"]
+        if u in db and db[u]["pwd"] == p:
+            st.session_state.user = u
+            st.rerun()
+        else: st.error("❌ Invalid ID/Password")
     st.stop()
 
-# User details
-u_id = st.session_state.logged_in_user
-u_role = st.session_state.user_db[u_id]["role"]
+u_id = st.session_state.user
+u_role = st.session_state.db["users"][u_id]["role"]
 
-# --- 4. ADMIN PANEL (FULL DELETE & PERMANENT SAVE) ---
+# --- 4. ADMIN PANEL (ID Creation Access) ---
 if u_role == "admin":
-    st.header("🛠️ Admin Master Control")
-    t1, t2, t3 = st.tabs(["👤 ID Management", "📋 Trades Control", "💰 Ledger"])
+    st.sidebar.title("ADMIN CONTROL")
+    if st.sidebar.button("Logout"):
+        del st.session_state.user
+        st.rerun()
+
+    st.header("🛠️ Admin Master Panel")
+    tab1, tab2 = st.tabs(["👤 Client Management", "📊 System Audit"])
     
-    with t1:
-        st.subheader("Create Permanent ID")
-        new_u = st.text_input("New ID Name")
-        if st.button("✅ Create and Save ID"):
-            if new_u and new_u not in st.session_state.user_db:
-                st.session_state.user_db[new_u] = {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": [], "first_login": True}
-                save_db(st.session_state.user_db) # File mein save kar diya
-                st.success(f"ID '{new_u}' Created! Refresh karne par bhi nahi jayegi.")
-            else: st.error("ID exists or name empty.")
+    with tab1:
+        st.subheader("Create New User")
+        new_u = st.text_input("Username")
+        if st.button("Add Client (Default Pwd: 1234)"):
+            if new_u and new_u not in st.session_state.db["users"]:
+                st.session_state.db["users"][new_u] = {"pwd": "1234", "role": "user", "bal": 0.0, "first": True}
+                save_db(st.session_state.db)
+                st.success(f"ID '{new_u}' ban gayi aur permanent save ho gayi!")
+            else: st.error("Error: ID exists or empty.")
 
         st.divider()
-        st.subheader("Permanent Deletion")
-        m_id = st.selectbox("Select ID", [k for k in st.session_state.user_db.keys() if k != "asifnagdade"])
-        if st.button("🚫 DELETE ID PERMANENTLY"):
-            del st.session_state.user_db[m_id]
-            save_db(st.session_state.user_db) # File se bhi delete
-            st.warning("User Deleted!")
+        st.subheader("Delete User")
+        rem_u = st.selectbox("Select User", [k for k in st.session_state.db["users"].keys() if k != "asifnagdade"])
+        if st.button("🚫 DELETE PERMANENTLY"):
+            del st.session_state.db["users"][rem_u]
+            save_db(st.session_state.db)
+            st.warning("User deleted from database.")
             st.rerun()
 
-# --- 5. CLIENT SECTION ---
+# --- 5. CUSTOMER INTERFACE (NSE & MCX ONLY) ---
 else:
-    # First Login Password Force
-    if st.session_state.user_db[u_id].get("first_login", True):
-        st.title("Update Password")
-        np = st.text_input("New Password", type="password")
-        if st.button("Update"):
-            st.session_state.user_db[u_id]["pwd"] = np
-            st.session_state.user_db[u_id]["first_login"] = False
-            save_db(st.session_state.user_db) # Naya password file mein save
-            st.success("Updated! Please login again.")
-            st.session_state.logged_in_user = None; st.rerun()
-        st.stop()
+    # Sidebar Info
+    st.sidebar.title("💎 Kite Lite")
+    st.sidebar.write(f"Account: **{u_id}**")
+    st.sidebar.write(f"Available Margin: **₹{st.session_state.db['users'][u_id]['bal']}**")
+    if st.sidebar.button("Logout"):
+        del st.session_state.user
+        st.rerun()
 
-    # Funds Section (Kuwait: +965 69304925)
-    st.sidebar.write(f"Balance: ₹{st.session_state.user_db[u_id]['balance']}")
-    if st.sidebar.button("Logout"): st.session_state.logged_in_user = None; st.rerun()
+    # Main Segment Tabs
+    st.markdown("### Stocks")
+    col1, col2, _ = st.columns([1, 1, 4])
+    with col1: st.markdown('<div class="segment-btn active-segment">NSE</div>', unsafe_allow_html=True)
+    with col2: st.markdown('<div class="segment-btn">MCX</div>', unsafe_allow_html=True)
+
+    # Search Bar
+    st.text_input("🔍 Search Script", placeholder="Enter script name...")
+    st.info("No Script In Your WatchList")
+
+    # Side Menu Buttons
+    st.sidebar.divider()
+    st.sidebar.button("📋 Logs")
+    st.sidebar.button("📜 Ledger Master")
     
-    st.error("⚠️ DISCLAIMER: WITHOUT SCREENSHOT AND PAYMENT PROOF, WE WILL NOT ADD FUNDS.")
+    # Funds Section with WhatsApp (+965 69304925)
+    st.sidebar.error("⚠️ NO SCREENSHOT, NO FUNDS")
+    if st.sidebar.button("🟢 Click for Pay-in via WhatsApp"):
+        st.write("Redirecting to WhatsApp...")
+    
+    if st.sidebar.button("🔴 Submit Payout Request"):
+        st.write("Payout form opening...")
