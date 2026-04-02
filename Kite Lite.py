@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, time
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Kite Lite Pro - CFT", layout="wide", page_icon="💎")
+st.set_page_config(page_title="Kite Lite Terminal", layout="wide", page_icon="💎")
 
 # --- SESSION STATE INITIALIZATION ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
@@ -19,7 +19,7 @@ if 'wl2' not in st.session_state: st.session_state.wl2 = ["GC=F", "CL=F", "SI=F"
 if not st.session_state.logged_in:
     cols = st.columns([1, 1.5, 1])
     with cols[1]:
-        st.title("🔐 Terminal Login")
+        st.title("🔐 Kite Lite Login")
         user = st.text_input("User ID", value="USER123")
         pwd = st.text_input("Password", type="password")
         if st.button("Login", use_container_width=True):
@@ -31,7 +31,7 @@ if not st.session_state.logged_in:
 
 # --- SIDEBAR & WATCHLISTS ---
 with st.sidebar:
-    st.title("💎 CFT Pro Terminal")
+    st.title("💎 Kite Lite Terminal")
     st.metric("Available Balance", f"₹{st.session_state.balance:,.2f}")
     
     wl_choice = st.radio("Select Watchlist", ["Watchlist 1", "Watchlist 2"])
@@ -53,15 +53,15 @@ with st.sidebar:
 def validate_trade(market, margin_required):
     now = datetime.now().time()
     
-    # Timing Checks
+    # Timing Checks [cite: 6, 41]
     if market == "NSE":
         if not (time(9,16) <= now <= time(15,30)): 
-            return False, "NSE Market Closed (09:16 - 15:30)"
+            return False, "NSE Market Closed (09:16 - 15:30) [cite: 6]"
         if now >= time(15,25): 
             return False, "Trades blocked in last 5 mins (Entry Restriction)"
     else: # MCX
         if not (time(9,1) <= now <= time(23,30)): 
-            return False, "MCX Market Closed (09:01 - 23:30)"
+            return False, "MCX Market Closed (09:01 - 23:30) [cite: 41]"
         if now >= time(23,25): 
             return False, "Trades blocked in last 5 mins"
     
@@ -114,13 +114,6 @@ with tab1:
                 st.success("Trade Executed!")
             else: st.error(msg)
 
-# --- TAB 2: TRADE LOG ---
-with tab2:
-    st.subheader("Transaction History")
-    if st.session_state.orders:
-        st.dataframe(pd.DataFrame(st.session_state.orders), use_container_width=True)
-    else: st.info("No trades executed yet.")
-
 # --- TAB 3: PORTFOLIO & AUTO SQUARE-OFF LOGIC ---
 with tab3:
     st.subheader("Current Positions")
@@ -128,9 +121,9 @@ with tab3:
         for i, pos in enumerate(st.session_state.portfolio):
             pnl = (live_price - pos['Price']) * pos['Qty'] if pos['Type'] == "BUY" else (pos['Price'] - live_price) * pos['Qty']
             
-            # Auto-Square off if loss reaches 90% of Margin
+            # Auto-Square off if loss reaches 90% of Margin [cite: 21, 48]
             if pnl <= -(0.9 * pos['Margin']):
-                st.warning(f"⚠️ Auto-Squared Off: {pos['Symbol']} reached 90% loss.")
+                st.warning(f"⚠️ Auto-Squared Off: {pos['Symbol']} reached 90% loss[cite: 21].")
                 st.session_state.balance += (pos['Margin'] + pnl) 
                 st.session_state.portfolio.pop(i)
                 st.rerun()
@@ -138,19 +131,22 @@ with tab3:
             st.write(f"**{pos['Symbol']}** | Qty: {pos['Qty']} | P&L: :{'green' if pnl>=0 else 'red'}[₹{pnl:,.2f}]")
     else: st.info("No active positions.")
 
-# --- TAB 4: RULES (ENGLISH) ---
+# --- TAB 4: RULES (ENGLISH VERSION) ---
 with tab4:
-    st.header("📋 CFT Compulsory Rules & Regulations")
+    st.header("📋 Compulsory Rules & Regulations")
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader("🔹 NSE Futures Rules")
-        st.write("• **Market Hours:** 09:16 AM to 03:30 PM.")
+        st.write("• **Market Hours:** 09:16 AM to 03:30 PM[cite: 6].")
         st.write("• **BTST Restriction:** No new entries allowed in the last 5 minutes of market.")
-        st.write("• **Dynamic Square-off:** Position auto-closed at 90% loss of trade margin. New trades can be taken after square-off.")
+        st.write("• **Limit Orders:** Cannot be placed above 4% of LTP[cite: 11].")
+        st.write("• **Risk Management:** Trading auto-blocks if loss reaches 90% of capital[cite: 21].")
+        st.write("• **Order Cleanup:** Pending orders are deleted after 03:30 PM[cite: 7].")
     with col_b:
         st.subheader("🔹 MCX Futures Rules")
-        st.write("• **Market Hours:** 09:01 AM to 11:30 PM.")
-        st.write("• **Expiry Rules:** Exit Crude/NG 1 day before expiry; Metals 5 days before.")
-        st.write("• **Dynamic Square-off:** Position auto-closed at 90% loss of trade margin.")
+        st.write("• **Market Hours:** 09:01 AM to 11:30 PM[cite: 41].")
+        st.write("• **Expiry Rules:** Exit Crude/NG 1 day before expiry[cite: 56]; Metals 5 days before[cite: 57].")
+        st.write("• **Risk Management:** Position auto-closed at 90% loss of trade margin[cite: 48].")
+        st.write("• **Order Cleanup:** Pending orders are deleted after market close[cite: 42].")
 
     st.error("⚠️ Violation of these rules may lead to trade cancellation.")
