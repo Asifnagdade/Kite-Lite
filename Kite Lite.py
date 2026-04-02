@@ -3,48 +3,65 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import calendar
+import random
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Kite Lite", layout="wide", page_icon="📈")
 
-# --- MASTER DATA (Strictly from your list) ---
+# --- MASTER DATA (As per your Screenshot) ---
 MASTER_DATA = {
     "NSE": {
-        "NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "RELIANCE": "RELIANCE.NS", 
-        "SBIN": "SBIN.NS", "TATA MOTORS": "TATAMOTORS.NS"
+        "NIFTY 50": "^NSEI", "BANK NIFTY": "^NSEBANK", "RELIANCE": "RELIANCE.NS", "SBIN": "SBIN.NS"
     },
     "MCX": {
-        "GOLD": "GC=F", "SILVER": "SI=F", "COPPER": "HG=F", "CRUDEOIL": "CL=F",
-        "GOLDM": "GOLDM.NS", "NATURALGAS": "NG=F", "ZINC": "ZINC1!S",
-        "SILVERM": "SIL=F", "SILVERMIC": "SILMIC.NS", "CRUDEOILM": "QM=F",
-        "ZINCMINI": "ZINC-MINI.NS", "NATGASMINI": "QG=F"
+        "GOLD": "GC=F", "SILVER": "SI=F", "CRUDEOIL": "CL=F", "NATURALGAS": "NG=F",
+        "GOLDM": "GOLDM.NS", "SILVERM": "SIL=F", "CRUDEOILM": "QM=F", "NATGASMINI": "QG=F"
     }
 }
 
 # --- SESSION STATE ---
 if 'user_db' not in st.session_state:
-    st.session_state.user_db = {
-        "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": []},
-        "user1": {"pwd": "1234", "role": "user", "balance": 0.0, "ledger": []}
-    }
+    st.session_state.user_db = {"asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "ledger": []}}
 if 'nse_watchlist' not in st.session_state: st.session_state.nse_watchlist = ["NIFTY 50"]
-if 'mcx_watchlist' not in st.session_state: st.session_state.mcx_watchlist = ["CRUDEOIL"]
+if 'mcx_watchlist' not in st.session_state: st.session_state.mcx_watchlist = ["CRUDEOILM"]
+if 'portfolio' not in st.session_state: st.session_state.portfolio = []
 if 'logged_in_user' not in st.session_state: st.session_state.logged_in_user = None
-if 'portfolio' not in st.session_state: st.session_state.portfolio = [] 
 
-# --- EXPIRY LOGIC ---
-def get_exp_names():
-    now = datetime.now()
-    curr_m = now.strftime('%b').upper()
-    next_m = (now.replace(day=28) + timedelta(days=4)).strftime('%b').upper()
-    last_thurs = max(week[calendar.THURSDAY] for week in calendar.monthcalendar(now.year, now.month))
-    show_next = (datetime(now.year, now.month, last_thurs) - now).days <= 1
-    return curr_m, next_m, show_next
+# --- REAL-TIME PRICE ENGINE (Zerodha Style) ---
+def get_pro_price(ticker, is_mcx=False):
+    try:
+        data = yf.download(ticker, period="1d", interval="1m", progress=False)
+        if data.empty: return None, 0.0, 0.0, 0.0
+        
+        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
+        
+        ltp = float(data['Close'].iloc[-1])
+        
+        # MCX INR CONVERSION
+        if is_mcx:
+            usd_inr = 83.50 # Fallback
+            try:
+                rate = yf.download("USDINR=X", period="1d", interval="1m", progress=False)['Close'].iloc[-1]
+                usd_inr = float(rate)
+            except: pass
+            ltp = ltp * usd_inr
+            data['Close'] *= usd_inr
+
+        # Artificial Fluctuation (Real-time feel)
+        fluctuation = random.uniform(-0.0002, 0.0002) * ltp
+        ltp += fluctuation
+        
+        # Market Depth Simulation (Bid/Ask)
+        bid = ltp - (ltp * 0.0001) # Best Buyer
+        ask = ltp + (ltp * 0.0001) # Best Seller (High Bid for Market Buy)
+        
+        return data, round(ltp, 2), round(bid, 2), round(ask, 2)
+    except:
+        return None, 0.0, 0.0, 0.0
 
 # --- LOGIN ---
 if not st.session_state.logged_in_user:
-    st.title("🔐 Kite Lite Login")
+    st.title("🔐 Kite Lite Professional")
     u, p = st.text_input("User"), st.text_input("Pass", type="password")
     if st.button("Login"):
         if u in st.session_state.user_db and st.session_state.user_db[u]["pwd"] == p:
@@ -54,95 +71,93 @@ if not st.session_state.logged_in_user:
 u_id = st.session_state.logged_in_user
 u_data = st.session_state.user_db[u_id]
 
-# --- SIDEBAR: SEGMENT-WISE ADD ---
-curr_m, next_m, show_next = get_exp_names()
-
+# --- SIDEBAR & DUAL WATCHLIST ---
 with st.sidebar:
     st.title("💎 Kite Lite")
-    st.metric("Balance", f"₹{u_data['balance']:,.2f}")
+    st.metric("Available Balance", f"₹{u_data['balance']:,.2f}")
     
     st.divider()
-    st.subheader("🔍 Add to Watchlist")
-    add_seg = st.selectbox("Select Segment", ["NSE", "MCX"])
-    base_options = list(MASTER_DATA[add_seg].keys())
-    
-    search_list = [f"{b} {curr_m} FUT" for b in base_options]
-    if show_next: search_list += [f"{b} {next_m} FUT" for b in base_options]
-            
-    to_add = st.selectbox("Search Contract", search_list)
-    if st.button("Add"):
-        if add_seg == "NSE":
-            if to_add not in st.session_state.nse_watchlist: st.session_state.nse_watchlist.append(to_add)
-        else:
-            if to_add not in st.session_state.mcx_watchlist: st.session_state.mcx_watchlist.append(to_add)
-        st.success(f"Added to {add_seg} List")
+    seg = st.selectbox("Segment", ["NSE", "MCX"])
+    to_add = st.selectbox("Search", list(MASTER_DATA[seg].keys()))
+    if st.button("Add to Watchlist"):
+        name = f"{to_add} {datetime.now().strftime('%b').upper()} FUT"
+        if seg == "NSE": st.session_state.nse_watchlist.append(name)
+        else: st.session_state.mcx_watchlist.append(name)
+        st.rerun()
 
-# --- TERMINAL TABS ---
-t1, t2, t3, t4 = st.tabs(["📊 Terminal", "💼 Portfolio", "📖 Ledger", "📜 Rules"])
+# --- TERMINAL ---
+t1, t2, t3 = st.tabs(["📊 Terminal", "💼 Portfolio", "📜 Rules"])
 
 with t1:
-    col_w1, col_w2 = st.columns(2)
-    with col_w1:
-        sel_nse = st.selectbox("📈 NSE Watchlist", st.session_state.nse_watchlist)
-    with col_w2:
-        sel_mcx = st.selectbox("🧱 MCX Watchlist", st.session_state.mcx_watchlist)
+    c_n, c_m = st.columns(2)
+    with c_n: sel_nse = st.selectbox("NSE Scripts", st.session_state.nse_watchlist)
+    with c_m: sel_mcx = st.selectbox("MCX Scripts", st.session_state.mcx_watchlist)
     
-    final_sel = st.radio("Active Script", [sel_nse, sel_mcx], horizontal=True)
-    
-    # Identify Data
-    base_name = final_sel.split(' ')[0]
-    is_mcx = any(x in final_sel for x in MASTER_DATA["MCX"].keys())
-    yf_ticker = MASTER_DATA["MCX"].get(base_name) if is_mcx else MASTER_DATA["NSE"].get(base_name)
+    active_view = st.radio("Select Trading View", [sel_nse, sel_mcx], horizontal=True)
+    base = active_view.split(' ')[0]
+    is_mcx = base in MASTER_DATA["MCX"]
+    yf_sym = MASTER_DATA["MCX"].get(base) or MASTER_DATA["NSE"].get(base)
 
-    if yf_ticker:
-        with st.spinner("Fetching Live Price..."):
-            df = yf.download(yf_ticker, period="1d", interval="1m", progress=False)
+    df, ltp, bid, ask = get_pro_price(yf_sym, is_mcx)
+    
+    if ltp > 0:
+        col_chart, col_order = st.columns([3, 1])
+        with col_chart:
+            st.subheader(f"{active_view}")
+            fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
+            fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
+            st.plotly_chart(fig, use_container_width=True)
             
-            if not df.empty:
-                if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-                
-                # Live USDINR for MCX
-                usd_val = 87.80 # Fallback
-                if is_mcx:
-                    try: 
-                        u_df = yf.download("USDINR=X", period="1d", interval="1m", progress=False)
-                        usd_val = u_df['Close'].iloc[-1]
-                    except: pass
-                
-                ltp = round(df['Close'].iloc[-1] * usd_val if is_mcx else df['Close'].iloc[-1], 2)
-                
-                c1, c2 = st.columns([3, 1])
-                with c1:
-                    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-                    fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, title=final_sel)
-                    st.plotly_chart(fig, use_container_width=True)
-                with c2:
-                    st.metric("LTP", f"₹{ltp:,.2f}")
-                    prod = st.radio("Product", ["Intraday (500x)", "Delivery (60x)"])
-                    qty = st.number_input("Qty", min_value=1, value=1)
-                    px = st.number_input("Price", value=ltp)
-                    
-                    lev = 500 if "Intraday" in prod else 60
-                    margin = (px * qty) / lev
-                    st.write(f"Margin: **₹{margin:,.2f}**")
-                    
-                    if st.button("BUY", use_container_width=True, type="primary"):
-                        if u_data["balance"] < margin: st.error("Low Funds!")
-                        elif px > (ltp * 1.04) or px < (ltp * 0.96): st.error("Price Range (4%)")
-                        else:
-                            st.session_state.user_db[u_id]["balance"] -= margin
-                            st.session_state.portfolio.append({"User": u_id, "Time": datetime.now(), "Symbol": final_sel, "Qty": qty, "Price": px, "Margin": margin, "Type": prod})
-                            st.success("Trade Placed!")
-            else:
-                st.error("Market data currently unavailable for this script. Try NIFTY or CRUDE.")
+            # Market Depth UI
+            d1, d2 = st.columns(2)
+            d1.metric("Best Bid (Sell Price)", f"₹{bid}")
+            d2.metric("Best Ask (Buy Price)", f"₹{ask}")
+            
+        with col_order:
+            st.write("### Order Window")
+            order_type = st.radio("Order Type", ["Market", "Limit"])
+            prod = st.radio("Product", ["Intraday (500x)", "Delivery (60x)"])
+            qty = st.number_input("Quantity", min_value=1, value=1)
+            
+            # Exec Price Logic
+            exec_price = ask if order_type == "Market" else st.number_input("Limit Price", value=ltp)
+            
+            # Margin Calculation
+            lev = 500 if "Intraday" in prod else 60
+            margin = (exec_price * qty) / lev
+            st.metric("Required Margin", f"₹{margin:,.2f}")
+            
+            if st.button("BUY / LONG", use_container_width=True, type="primary"):
+                if u_data["balance"] < margin:
+                    st.error("Insufficient Funds!")
+                elif order_type == "Limit" and (exec_price > ltp * 1.04 or exec_price < ltp * 0.96):
+                    st.error("Price outside 4% range!")
+                else:
+                    # Execute Trade
+                    st.session_state.user_db[u_id]["balance"] -= margin
+                    st.session_state.portfolio.append({
+                        "Symbol": active_view, "Price": exec_price, "Qty": qty, 
+                        "Type": prod, "Time": datetime.now(), "Margin": margin
+                    })
+                    st.success(f"Bought at ₹{exec_price}")
+    else:
+        st.error("Connecting to Exchange... Please wait.")
 
-# --- RULES ---
-with t4:
-    st.markdown("""
-    ### Kite Lite Rules:
-    * **NSE Watchlist:** Stocks added here stay in the NSE list.
-    * **MCX Watchlist:** Commodities stay in the MCX list.
-    * **Leverage:** Intraday 500x | Delivery 60x.
-    * **Expiry:** New contracts appear only 1 day before expiry.
-    * **Holding:** Minimum 2-minute hold required before exit.
-    """)
+with t2:
+    st.subheader("Running Positions")
+    for i, pos in enumerate(st.session_state.portfolio):
+        # Current P&L calculation based on latest Bid (to sell)
+        pnl = (bid - pos['Price']) * pos['Qty']
+        color = "green" if pnl >= 0 else "red"
+        st.write(f"**{pos['Symbol']}** | Qty: {pos['Qty']} | Avg: ₹{pos['Price']} | P&L: :{color}[₹{pnl:,.2f}]")
+        
+        if st.button(f"Square Off {i}", use_container_width=True):
+            if (datetime.now() - pos["Time"]) < timedelta(minutes=2):
+                st.error("Rule: 2-Minute Holding Required!")
+            else:
+                st.session_state.user_db[u_id]["balance"] += (pos['Margin'] + pnl)
+                st.session_state.portfolio.pop(i)
+                st.rerun()
+
+with t3:
+    st.info("60x Delivery | 500x Intraday | Market Orders execute at Best Ask (Slippage included) | 2-Min Holding Rule.")
