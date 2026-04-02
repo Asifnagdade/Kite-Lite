@@ -61,13 +61,19 @@ with col1:
 # Fetch Price Data
 with st.spinner("Fetching Live Prices..."):
     data = yf.download(ticker, period="1d", interval="1m", progress=False)
-    if not data.empty:
-        live_price = data['Close'].iloc[-1]
-        with col2:
-            st.metric("Live Price", f"₹{live_price:,.2f}")
-        with col3:
-            price_change = live_price - data['Open'].iloc[0]
-            st.metric("Today's Change", f"{price_change:,.2f}", delta=f"{price_change:,.2f}")
+        if not data.empty:
+            # Multi-index handle karne ke liye
+            if isinstance(data.columns, pd.MultiIndex):
+                live_price = float(data['Close'][ticker].iloc[-1])
+                prev_close = float(data['Open'][ticker].iloc[0])
+            else:
+                live_price = float(data['Close'].iloc[-1])
+                prev_close = float(data['Open'].iloc[0])
+                
+            price_chg = live_price - prev_close
+            
+            with col2:
+                st.metric("Live Price", f"₹{live_price:,.2f}", f"{price_chg:,.2f}")
     else:
         st.error("Market is currently closed or Data Unavailable.")
         live_price = 0
