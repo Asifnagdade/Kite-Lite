@@ -9,7 +9,6 @@ import urllib.parse
 st.set_page_config(page_title="Kite Lite Terminal", layout="wide", page_icon="💎")
 
 # --- MASTER DATABASE & SESSION INITIALIZATION ---
-# Your personalized Admin credentials are set here
 if 'user_db' not in st.session_state:
     st.session_state.user_db = {
         "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0},
@@ -37,18 +36,15 @@ if not st.session_state.logged_in_user:
 
 current_user = st.session_state.logged_in_user
 user_role = st.session_state.user_db[current_user]["role"]
-whatsapp_number = "919000000000" # <-- Replace with your actual WhatsApp number
+whatsapp_number = "919000000000" # <-- Change to your number
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("💎 Kite Lite Terminal")
     st.write(f"Account: **{current_user}** ({user_role.upper()})")
-    
-    # User Balance Display
     user_bal = st.session_state.user_db[current_user]["balance"]
     st.metric("Available Balance", f"₹{user_bal:,.2f}")
     
-    # Client Support (WhatsApp)
     if user_role == "user":
         st.divider()
         st.subheader("Funds Management")
@@ -71,34 +67,40 @@ if user_role == "admin":
             amt = st.number_input("Add/Subtract Funds", value=0.0)
             if st.button("Update Virtual Balance"):
                 st.session_state.user_db[target]["balance"] += amt
-                st.success(f"Updated {target}'s balance successfully.")
+                st.success(f"Updated {target}'s balance.")
                 st.rerun()
         else: st.info("No client accounts found.")
+
+# --- DATA FETCHING (FIXED ERROR) ---
+def get_live_data(symbol):
+    df = yf.download(symbol, period="1d", interval="1m", progress=False)
+    if not df.empty:
+        # Handling MultiIndex Columns if they exist
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df, float(df['Close'].iloc[-1])
+    return df, 0.0
 
 # --- TRADE VALIDATION & RULES ---
 def validate_trade(market, margin_required):
     now = datetime.now().time()
-    # Market Timing & Last 5-Min Entry Rule
+    # Timings [cite: 6, 41]
     if market == "NSE":
-        if not (time(9,16) <= now <= time(15,30)): return False, "NSE Market Closed [cite: 6]"
+        if not (time(9,16) <= now <= time(15,30)): return False, "NSE Market Closed (09:16 - 15:30)" [cite: 6]
         if now >= time(15,25): return False, "New entries restricted in final 5 mins."
-    else: # MCX Rules
-        if not (time(9,1) <= now <= time(23,30)): return False, "MCX Market Closed [cite: 41]"
+    else: 
+        if not (time(9,1) <= now <= time(23,30)): return False, "MCX Market Closed (09:01 - 23:30)" [cite: 41]
         if now >= time(23,25): return False, "New entries restricted in final 5 mins."
     
     if st.session_state.user_db[current_user]["balance"] < margin_required:
         return False, "Insufficient Balance for this trade."
     return True, "Valid"
 
-# --- MAIN INTERFACE TABS ---
+# --- MAIN INTERFACE ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Terminal", "📝 Trade Log", "💼 Portfolio", "📜 Rules"])
 
-# Data Fetching
-with st.spinner("Syncing..."):
-    data = yf.download(ticker, period="1d", interval="1m", progress=False)
-    live_price = float(data['Close'].iloc[-1]) if not data.empty else 0.0
+data, live_price = get_live_data(ticker)
 
-# --- TERMINAL ---
 with tab1:
     if not data.empty:
         c1, c2 = st.columns([3, 1])
@@ -124,37 +126,35 @@ with tab1:
                     st.session_state.portfolio.append(trade_info)
                     st.success("Trade Successful!")
                 else: st.error(msg)
+    else:
+        st.error("Error fetching market data. Please check connection.")
 
-# --- PORTFOLIO & AUTO SQUARE-OFF ---
 with tab3:
     st.subheader("Active Positions")
-    user_positions = [p for p in st.session_state.portfolio if p["User"] == current_user]
-    if user_positions:
+    if st.session_state.portfolio:
         for i, pos in enumerate(st.session_state.portfolio):
             if pos["User"] == current_user:
                 pnl = (live_price - pos['Price']) * pos['Qty']
-                # 90% Capital Loss Auto-Square Off Rule
-                if pnl <= -(0.9 * pos['Margin']):
+                if pnl <= -(0.9 * pos['Margin']): # 90% Rule [cite: 21, 48]
                     st.session_state.user_db[current_user]["balance"] += (pos['Margin'] + pnl)
                     st.session_state.portfolio.pop(i)
-                    st.warning(f"Position {pos['Symbol']} Auto-Squared Off due to 90% loss. [cite: 21, 48]")
+                    st.warning(f"Position {pos['Symbol']} Auto-Squared Off (90% Loss).")
                     st.rerun()
                 st.write(f"**{pos['Symbol']}** | P&L: ₹{pnl:,.2f}")
-    else: st.info("No open positions.")
+    else: st.info("No active positions.")
 
-# --- RULES (ENGLISH) ---
 with tab4:
     st.header("📋 Compulsory Rules & Regulations")
     c_a, c_b = st.columns(2)
     with c_a:
-        st.subheader("NSE Futures [cite: 5]")
-        st.write("• **Hours:** 09:16 - 15:30 [cite: 6]")
-        st.write("• **Auto-Block:** 90% capital loss square-off [cite: 21]")
-        st.write("• **Limits:** Max 4% distance from LTP [cite: 11]")
-        st.write("• **Cleanup:** Pending orders deleted after close [cite: 7]")
+        st.subheader("NSE Futures")
+        st.write("• Trading Hours: 09:16 to 03:30 [cite: 6]")
+        st.write("• Pending orders deleted after market close [cite: 7]")
+        st.write("• Limit orders within 4% of LTP [cite: 11]")
+        st.write("• Auto-square off at 90% loss of capital [cite: 21]")
     with c_b:
-        st.subheader("MCX Futures [cite: 38]")
-        st.write("• **Hours:** 09:01 - 23:30 [cite: 41]")
-        st.write("• **Expiry:** Exit Crude/NG 1 day before expiry [cite: 56]")
-        st.write("• **Metals:** Exit trades 5 days before expiry [cite: 57]")
-        st.write("• **Cleanup:** Pending orders deleted after close [cite: 42]")
+        st.subheader("MCX Futures")
+        st.write("• Trading Hours: 09:01 to 23:30 [cite: 41]")
+        st.write("• Exit Crude/NG 1 day before expiry [cite: 56]")
+        st.write("• Exit Bullions/Metals 5 days before expiry [cite: 57]")
+        st.write("• Auto-square off at 90% loss of capital [cite: 48]")
