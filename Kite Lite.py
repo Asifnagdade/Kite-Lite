@@ -10,7 +10,6 @@ st.set_page_config(page_title="Kite Lite Terminal", layout="wide", page_icon="�
 
 # --- MASTER DATABASE INITIALIZATION ---
 if 'user_db' not in st.session_state:
-    # Initial Database with Admin and one Default User
     st.session_state.user_db = {
         "asifnagdade": {"pwd": "Khadija@12", "role": "admin", "balance": 0.0, "needs_reset": False},
         "user1": {"pwd": "1234", "role": "user", "balance": 10000.0, "needs_reset": True}
@@ -38,7 +37,7 @@ if not st.session_state.logged_in_user:
 current_user = st.session_state.logged_in_user
 user_data = st.session_state.user_db[current_user]
 
-# --- PASSWORD RESET FORCE SCREEN ---
+# --- FORCE PASSWORD RESET ---
 if user_data.get("needs_reset", False):
     cols = st.columns([1, 1.5, 1])
     with cols[1]:
@@ -54,16 +53,13 @@ if user_data.get("needs_reset", False):
             else: st.error("Passwords do not match or too short.")
     st.stop()
 
-# --- APP LOGIC AFTER LOGIN & RESET ---
 user_role = user_data["role"]
-whatsapp_number = "919000000000" 
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("💎 Kite Lite Terminal")
     st.write(f"User: **{current_user}** ({user_role.upper()})")
     st.metric("Available Balance", f"₹{user_data['balance']:,.2f}")
-    
     if st.button("Logout"):
         st.session_state.logged_in_user = None
         st.rerun()
@@ -74,39 +70,31 @@ with st.sidebar:
 if user_role == "admin":
     with st.expander("🛠️ MASTER CONTROL PANEL"):
         t1, t2 = st.tabs(["👤 User Management", "💰 Fund Management"])
-        
         with t1:
             st.subheader("Create New User")
-            new_username = st.text_input("New Username (e.g., user2)")
+            new_username = st.text_input("New Username")
             if st.button("Create Account"):
                 if new_username and new_username not in st.session_state.user_db:
-                    st.session_state.user_db[new_username] = {
-                        "pwd": "1234", 
-                        "role": "user", 
-                        "balance": 0.0, 
-                        "needs_reset": True
-                    }
-                    st.success(f"User '{new_username}' created with default password '1234'")
-                else: st.error("User already exists or invalid name.")
-            
+                    st.session_state.user_db[new_username] = {"pwd": "1234", "role": "user", "balance": 0.0, "needs_reset": True}
+                    st.success(f"User '{new_username}' created (Default PWD: 1234)")
+                else: st.error("Invalid Name or User Exists")
             st.divider()
-            st.subheader("Reset User Password")
-            user_to_reset = st.selectbox("Select User to Reset", [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"])
-            if st.button("Reset to Default (1234)"):
+            st.subheader("Reset Password")
+            user_to_reset = st.selectbox("Select User", [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"])
+            if st.button("Reset to 1234"):
                 st.session_state.user_db[user_to_reset]["pwd"] = "1234"
                 st.session_state.user_db[user_to_reset]["needs_reset"] = True
-                st.warning(f"Password for {user_to_reset} has been reset to 1234.")
-
+                st.warning(f"Password reset for {user_to_reset}")
         with t2:
-            st.subheader("Manage Funds")
-            target = st.selectbox("Select Client", [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"], key="fund_sel")
-            amt = st.number_input("Add/Subtract Amount", value=0.0)
+            st.subheader("Update Funds")
+            target = st.selectbox("Select Client", [u for u in st.session_state.user_db if st.session_state.user_db[u]["role"] == "user"], key="f_m")
+            amt = st.number_input("Amount", value=0.0)
             if st.button("Update Balance"):
                 st.session_state.user_db[target]["balance"] += amt
                 st.success("Balance Updated.")
                 st.rerun()
 
-# --- DATA FETCHING & VALIDATION ---
+# --- TRADING LOGIC ---
 def get_live_data(symbol):
     df = yf.download(symbol, period="1d", interval="1m", progress=False)
     if not df.empty:
@@ -117,15 +105,16 @@ def get_live_data(symbol):
 def validate_trade(market, margin_required):
     now = datetime.now().time()
     if market == "NSE":
-        if not (time(9,16) <= now <= time(15,30)): return False, "NSE Market Closed [cite: 6]"
+        if not (time(9,16) <= now <= time(15,30)): return False, "NSE Market Closed"
+        if now >= time(15,25): return False, "No new entries in last 5 mins"
     else:
-        if not (time(9,1) <= now <= time(23,30)): return False, "MCX Market Closed [cite: 41]"
-    
+        if not (time(9,1) <= now <= time(23,30)): return False, "MCX Market Closed"
+        if now >= time(23,25): return False, "No new entries in last 5 mins"
     if st.session_state.user_db[current_user]["balance"] < margin_required:
         return False, "Insufficient Balance."
     return True, "Valid"
 
-# --- MAIN INTERFACE ---
+# --- MAIN TABS ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Terminal", "📝 Trade Log", "💼 Portfolio", "📜 Rules"])
 
 data, live_price = get_live_data(ticker)
@@ -135,7 +124,7 @@ with tab1:
         c1, c2 = st.columns([3, 1])
         with c1:
             fig = go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])])
-            fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
+            fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
             st.metric("LTP", f"₹{live_price:,.2f}")
@@ -144,7 +133,6 @@ with tab1:
             mult = 500 if "Intraday" in prod else 60
             margin = (live_price * qty) / mult
             st.write(f"Margin: ₹{margin:,.2f}")
-            
             market_type = "MCX" if ticker in ["GC=F", "CL=F", "SI=F", "NG=F"] else "NSE"
             if st.button("PLACE ORDER", use_container_width=True, type="primary"):
                 ok, msg = validate_trade(market_type, margin)
@@ -160,21 +148,24 @@ with tab3:
     for i, pos in enumerate(st.session_state.portfolio):
         if pos["User"] == current_user:
             pnl = (live_price - pos['Price']) * pos['Qty']
-            if pnl <= -(0.9 * pos['Margin']): # 90% Capital Loss Rule [cite: 21, 48]
+            if pnl <= -(0.9 * pos['Margin']):
                 st.session_state.user_db[current_user]["balance"] += (pos['Margin'] + pnl)
                 st.session_state.portfolio.pop(i); st.rerun()
             st.write(f"**{pos['Symbol']}** | P&L: ₹{pnl:,.2f}")
 
 with tab4:
-    st.header("📋 Compulsory Rules & Regulations [cite: 4]")
+    st.header("📋 Compulsory Rules & Regulations")
     c_a, c_b = st.columns(2)
     with c_a:
-        st.subheader("NSE Futures [cite: 5]")
-        st.write("• Hours: 09:16 to 03:30 [cite: 6]")
-        st.write("• Limit Order Max 4% of LTP [cite: 11]")
-        st.write("• Auto-square off at 90% capital loss [cite: 21]")
+        st.subheader("NSE Rules")
+        st.write("• Trading starts at 09:16 & closes at 03:30.")
+        st.write("• Pending orders deleted automatically after market close.")
+        st.write("• Limit order cannot be placed above 4% of LTP.")
+        st.write("• Trade auto squared-off if loss reaches 90% of capital.")
+        st.write("• BTST/STBT is not allowed at all.")
     with c_b:
-        st.subheader("MCX Futures [cite: 38]")
-        st.write("• Hours: 09:01 to 23:30 [cite: 41]")
-        st.write("• Exit Crude/NG 1 day before expiry [cite: 56]")
-        st.write("• Auto-square off at 90% capital loss [cite: 48]")
+        st.subheader("MCX Rules")
+        st.write("• Trading starts at 09:01 & closes at 23:30.")
+        st.write("• Exit Crude Oil/Natural Gas 1 day before expiry.")
+        st.write("• Exit Bullions & Metals 5 days before expiry.")
+        st.write("• Trade auto squared-off if loss reaches 90% of capital.")
