@@ -60,7 +60,7 @@ with col1:
 
 # Fetch Price Data
 with st.spinner("Fetching Live Prices..."):
-    data = yf.Ticker(ticker).history(period="1d", interval="1m")
+    data = yf.download(ticker, period="1d", interval="1m", progress=False)
     if not data.empty:
         live_price = data['Close'].iloc[-1]
         with col2:
