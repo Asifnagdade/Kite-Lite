@@ -1,7 +1,9 @@
 import streamlit as st
 import json
 import os
+from datetime import datetime
 
+# --- DATABASE ENGINE ---
 DB_FILE = "master_trading_db.json"
 
 def load_db():
@@ -11,7 +13,8 @@ def load_db():
         "users": {
             "affanwadekar": {"pwd": "1234", "role": "master", "bal": 0.0},
             "asifnagdade": {"pwd": "1234", "role": "master", "bal": 0.0}
-        }
+        },
+        "orders": {}, "history": {}
     }
 
 def save_db(db):
@@ -19,43 +22,55 @@ def save_db(db):
 
 if 'db' not in st.session_state: st.session_state.db = load_db()
 
-st.title("? Master Control Panel")
-
-if 'm_auth' not in st.session_state:
-    u = st.text_input("Master ID")
-    p = st.text_input("Password", type="password")
+# --- MASTER LOGIN ---
+if 'm_user' not in st.session_state:
+    st.title("⭐ Master Control Panel")
+    u = st.text_input("Master ID").strip()
+    p = st.text_input("Password", type="password").strip()
     if st.button("Login Master"):
-        if u in ["affanwadekar", "asifnagdade"] and st.session_state.db["users"][u]["pwd"] == p:
-            st.session_state.m_auth = u
+        db = st.session_state.db["users"]
+        if u in ["affanwadekar", "asifnagdade"] and db[u]["pwd"] == p:
+            st.session_state.m_user = u
             st.rerun()
         else: st.error("Access Denied")
     st.stop()
 
-menu = st.sidebar.radio("Master Menu", ["User/Admin Management", "Fund Control", "Delete Orders"])
+# --- MASTER MENU ---
+st.sidebar.title(f"Master: {st.session_state.m_user}")
+menu = st.sidebar.radio("Master Menu", ["User Management", "Fund Management", "Delete Orders", "Settings"])
 
-if menu == "User/Admin Management":
-    st.header("?? Create Accounts")
-    acc_type = st.radio("Account Type", ["Admin", "User"])
-    name = st.text_input("Enter Name").lower().strip()
-    if st.button("? Create ID"):
-        prefix = "admin_" if acc_type == "Admin" else "user_"
-        fid = f"{prefix}{name}"
-        if fid not in st.session_state.db["users"]:
-            st.session_state.db["users"][fid] = {"pwd": "1234", "role": acc_type.lower(), "bal": 0.0, "created_by": st.session_state.m_auth}
-            save_db(st.session_state.db)
-            st.success(f"ID Created: {fid}")
-        else: st.error("ID exists!")
-    
-    st.divider()
-    target = st.selectbox("Delete ID", [k for k in st.session_state.db["users"].keys() if k not in ["affanwadekar", "asifnagdade"]])
-    if st.button("??? DELETE PERMANENTLY"):
-        del st.session_state.db["users"][target]
-        save_db(st.session_state.db); st.rerun()
+if menu == "User Management":
+    st.header("👤 Create Admin or User ID")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("New Account")
+        type = st.radio("Account Type", ["Admin Account", "User Account"])
+        name = st.text_input("Enter Name (e.g. sami)").strip().lower()
+        if st.button("✅ Create ID"):
+            prefix = "admin_" if type == "Admin Account" else "user_"
+            fid = f"{prefix}{name}"
+            if fid not in st.session_state.db["users"]:
+                st.session_state.db["users"][fid] = {"pwd": "1234", "role": type.split()[0].lower(), "bal": 0.0, "created_by": st.session_state.m_user}
+                save_db(st.session_state.db); st.success(f"Created: {fid}")
+            else: st.error("ID Exists!")
+    with col2:
+        st.subheader("Delete IDs")
+        target = st.selectbox("Select ID", [k for k in st.session_state.db["users"].keys() if k not in ["affanwadekar", "asifnagdade"]])
+        if st.button("🗑️ DELETE PERMANENTLY"):
+            del st.session_state.db["users"][target]
+            save_db(st.session_state.db); st.warning("Deleted!"); st.rerun()
 
-elif menu == "Fund Control":
-    st.header("?? Fund Update")
-    user = st.selectbox("Select ID", list(st.session_state.db["users"].keys()))
-    amt = st.number_input("Amount", step=100.0)
-    if st.button("Update Balance"):
+elif menu == "Fund Management":
+    st.header("💰 Global Wallet Control")
+    user = st.selectbox("Select User/Admin", list(st.session_state.db["users"].keys()))
+    amt = st.number_input("Amount (Update Balance)", step=100.0)
+    if st.button("Update"):
         st.session_state.db["users"][user]["bal"] += amt
-        save_db(st.session_state.db); st.success("Updated!")
+        save_db(st.session_state.db); st.success("Balance Updated!")
+
+elif menu == "Delete Orders":
+    st.header("📋 Master Order Eraser")
+    st.info("Yahan se aap kisi bhi user ka galat trade permanent delete kar sakte hain.")
+    # Logic for listing and popping from db["orders"]
+
+if st.sidebar.button("Logout"): del st.session_state.m_user; st.rerun()
