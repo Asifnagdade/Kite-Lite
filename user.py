@@ -1,9 +1,9 @@
 import streamlit as st
 
-st.title("?? Kite Lite Trading Terminal")
+st.title("💹 Kite Lite Trading Terminal")
 
 # Sidebar Rules for User
-st.sidebar.info("?? **Trading Rules:**\n- Min Holding: 2 Mins\n- Futures Only\n- Custom Qty Allowed")
+st.sidebar.info("📌 **Trading Rules:**\n- Min Holding: 2 Mins\n- Futures Only\n- Custom Qty Allowed")
 
 # --- SCRIPTS LIST ---
 nse_futures = ["NIFTY-FUT", "BANKNIFTY-FUT", "RELIANCE-FUT", "HDFCBANK-FUT", "INFY-FUT", "TCS-FUT", "SBIN-FUT"]
@@ -16,7 +16,7 @@ with col_watch:
     market = st.radio("Market", ["NSE FUT", "MCX"])
     scripts = nse_futures if market == "NSE FUT" else mcx_futures
     selected_script = st.selectbox("Select Script to Trade", scripts)
-    st.metric(selected_script, "LTP: ? 22,450", "+0.45%")
+    st.metric(selected_script, "LTP: ₹ 22,450", "+0.45%")
 
 with col_trade:
     st.subheader(f"Trade {selected_script}")
@@ -33,4 +33,4 @@ with col_trade:
     st.divider()
     st.subheader("Open Positions")
     st.warning("Note: Trades closed within 120 seconds will be automatically reversed.")
-    st.table({"Script": [selected_script], "Qty": [qty], "Entry": [22400], "Time": ["14:30:05"], "PNL": ["+? 1,200"]})
+    st.table({"Script": [selected_script], "Qty": [qty], "Entry": [22400], "Time": ["14:30:05"], "PNL": ["+₹ 1,200"]})
