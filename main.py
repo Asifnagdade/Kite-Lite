@@ -1,35 +1,44 @@
 import streamlit as st
 
-# --- PAGE CONFIG ---
+# --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Kite Lite",
     page_icon="🚀",
     layout="wide"
 )
 
-# --- LOGO & TITLE DESIGN ---
-# Is code se aapka upload kiya hua blue logo sidebar mein top par dikhega
-st.sidebar.image("https://raw.githubusercontent.com/Asifnagdade/Kite-Lite/main/logo.jpg", width=200)
+# --- 2. SIDEBAR LOGO & DESIGN ---
+# Blue Logo jo aapne bheja tha
+# Make sure GitHub par iska naam 'logo.jpg' hi ho
+logo_url = "https://raw.githubusercontent.com/Asifnagdade/Kite-Lite/main/logo.jpg"
+
+st.sidebar.image(logo_url, use_container_width=True)
 
 st.sidebar.markdown("""
-    <h2 style='color: #184ba3; font-family: sans-serif; margin-top: -10px;'>Kite Lite</h2>
+    <h2 style='color: #4A90E2; font-family: sans-serif; margin-top: -10px; text-align: center;'>Kite Lite</h2>
     """, unsafe_allow_html=True)
 
-# Navigation
+# Navigation Radio Buttons
 app_mode = st.sidebar.radio("Select Panel", ["Master Control", "Admin Portal"])
-st.sidebar.divider()
 
-# --- LOGIC TO LOAD FILES ---
+st.sidebar.divider()
+# Yahan se humne names aur extra text poori tarah hata diya hai.
+
+# --- 3. DYNAMIC FILE LOADER ---
+# Is logic se Master aur Admin dono ek hi link par chalenge
 if app_mode == "Master Control":
     try:
+        # utf-8-sig use kiya hai taaki U+FEFF error na aaye
         with open("master.py", "r", encoding="utf-8-sig") as f:
-            exec(f.read())
+            code = f.read()
+            exec(code)
     except Exception as e:
         st.error(f"Master file loading error: {e}")
 
 elif app_mode == "Admin Portal":
     try:
         with open("admin.py", "r", encoding="utf-8-sig") as f:
-            exec(f.read())
+            code = f.read()
+            exec(code)
     except Exception as e:
         st.error(f"Admin file loading error: {e}")
