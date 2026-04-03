@@ -2,44 +2,22 @@ import streamlit as st
 import pandas as pd
 import os
 
-# --- ADMIN LOGIN PAGE ---
 st.title("🛡️ Admin Portal")
 
-# User database load karne ka function
-def load_users():
-    if os.path.exists("users.csv"):
-        return pd.read_csv("users.csv")
-    return pd.DataFrame(columns=["username", "password", "role"])
-
-if 'admin_logged_in' not in st.session_state:
-    st.session_state.admin_logged_in = False
-
-if not st.session_state.admin_logged_in:
-    with st.form("admin_login"):
-        u_id = st.text_input("Admin ID")
-        u_pass = st.text_input("Password", type="password")
-        btn = st.form_submit_button("Login to Admin Portal")
-
-        if btn:
-            df = load_users()
-            # Yahan hum check kar rahe hain ki ID database mein hai aur role 'admin' hai
-            user_match = df[(df['username'] == u_id) & (df['password'] == str(u_pass))]
-            
-            if not user_match.empty:
-                role = user_match.iloc[0]['role']
-                if role == 'admin':
-                    st.session_state.admin_logged_in = True
-                    st.session_state.admin_user = u_id
-                    st.rerun()
-                else:
-                    st.error("Access Denied: You do not have Admin privileges.")
-            else:
-                st.error("Invalid Admin ID or Password.")
+if 'a_auth' not in st.session_state: st.session_state.a_auth = False
+if not st.session_state.a_auth:
+    u = st.text_input("Admin ID")
+    p = st.text_input("Password", type="password")
+    if st.button("Login Admin"):
+        df = pd.read_csv("users.csv", dtype=str)
+        if not df[(df['username']==u) & (df['password']==p) & (df['role']=='admin')].empty:
+            st.session_state.a_auth = True; st.session_state.admin_user = u; st.rerun()
+        else: st.error("Invalid Login")
 else:
-    st.success(f"Welcome to Admin Dashboard, {st.session_state.admin_user}")
+    st.header(f"Admin: {st.session_state.admin_user}")
+    tab1, tab2 = st.tabs(["📈 Client Management", "📊 Signal/Order Logs"])
+    with tab1:
+        st.button("Add New Trader/User")
+        st.write("Manage Limits & Margin for Users")
     if st.button("Logout"):
-        st.session_state.admin_logged_in = False
-        st.rerun()
-    
-    # --- YAHAN SE AAPKA ADMIN KA KAAM SHURU HOGA ---
-    st.write("Manage your traders and signals here.")
+        st.session_state.a_auth = False; st.rerun()
