@@ -1,2 +1,1 @@
-username,password,role
-asifnagdade,1234,master
+trader_id,password,parent_admin,margin
