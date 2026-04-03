@@ -1,141 +1,112 @@
-import streamlit as st
-import json
-import os
+﻿import streamlit as st
+import yfinance as yf
+import pandas as pd
 from datetime import datetime
 
-# --- 1. PERMANENT DATABASE ENGINE ---
-DB_FILE = "master_trading_db.json"
+# --- APP CONFIGURATION ---
+st.set_page_config(page_title="Kite Lite - Futures & MCX", layout="wide")
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f: return json.load(f)
-    # Initial Master Accounts
-    return {
-        "users": {
-            "affanwadekar": {"pwd": "1234", "role": "master", "bal": 0.0},
-            "asifnagdade": {"pwd": "1234", "role": "master", "bal": 0.0}
-        },
-        "orders": {}, # Format: {user_id: [trade_list]}
-        "ledger": {}, # Format: {user_id: [transaction_list]}
-        "pnl_reports": {}
-    }
+# Custom CSS for Professional Look
+st.markdown("""
+    <style>
+    .main { background-color: #f0f2f6; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #ff4b4b; color: white; }
+    .stMetric { background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_allow_html=True)
 
-def save_db(data):
-    with open(DB_FILE, "w") as f: json.dump(data, f, indent=4)
+# --- SESSION STATE (Portfolio Management) ---
+if 'balance' not in st.session_state:
+    st.session_state.balance = 1000000.0  # ₹10 Lakhs Virtual Money
+if 'trades' not in st.session_state:
+    st.session_state.trades = []
 
-if 'db' not in st.session_state:
-    st.session_state.db = load_db()
+# --- SIDEBAR: ASSET SELECTION ---
+st.sidebar.title("💎 Kite Lite Terminal")
+segment = st.sidebar.radio("Select Segment", ["NSE Futures (Indices)", "MCX Commodities"])
 
-# --- 2. UI SETUP ---
-st.set_page_config(page_title="Master Control Panel", layout="wide")
+# Data Lists
+nse_futures = {
+    "Nifty 50 Future": "^NSEI", 
+    "Bank Nifty Future": "^NSEBANK",
+    "Fin Nifty Future": "NIFTY_FIN_SERVICE.NS"
+}
 
-# --- 3. LOGIN SYSTEM ---
-if 'logged_in_user' not in st.session_state:
-    st.title("🔐 Master/Admin Login")
-    u = st.text_input("Username (Master/Admin)").strip()
-    p = st.text_input("Password", type="password").strip()
-    if st.button("Access Dashboard", use_container_width=True):
-        db = st.session_state.db["users"]
-        if u in db and db[u]["pwd"] == p:
-            st.session_state.logged_in_user = u
-            st.rerun()
-        else: st.error("Access Denied: Invalid Credentials")
-    st.stop()
+mcx_list = {
+    "Gold (Large)": "GOLD.NS",
+    "Gold Mini": "GOLDM.NS",
+    "Silver (Large)": "SILVER.NS",
+    "Silver Mini": "SILVERM.NS",
+    "Silver Micro": "SILVERMIC.NS",
+    "Crude Oil": "CRUDEOIL.NS",
+    "Crude Oil Mini": "CRUDEOILM.NS",
+    "Natural Gas": "NATURALGAS.NS",
+    "Natural Gas Mini": "NATGASMINI.NS"
+}
 
-u_id = st.session_state.logged_in_user
-u_role = st.session_state.db["users"][u_id]["role"]
+if segment == "NSE Futures (Indices)":
+    asset_name = st.sidebar.selectbox("Select Index", list(nse_futures.keys()))
+    ticker = nse_futures[asset_name]
+else:
+    asset_name = st.sidebar.selectbox("Select Commodity", list(mcx_list.keys()))
+    ticker = mcx_list[asset_name]
 
-# --- 4. MASTER DASHBOARD (Affan & Asif) ---
-if u_role == "master":
-    st.sidebar.title("⭐ Master Control")
-    st.sidebar.write(f"Logged in: **{u_id}**")
-    
-    menu = st.sidebar.radio("Master Menu", [
-        "User Management", 
-        "Fund Management", 
-        "Live Orders & Deletion", 
-        "PNL Tracker", 
-        "Global Order Book",
-        "Settings"
-    ])
+# --- MAIN DASHBOARD ---
+st.title(f"📊 Trading: {asset_name}")
 
-    # --- USER MANAGEMENT ---
-    if menu == "User Management":
-        st.header("👤 User & Admin Management")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Create New Account")
-            acc_type = st.radio("Account Type", ["Admin Account", "User Account"])
-            raw_name = st.text_input("Enter Name (e.g. sami, chetan)")
-            
-            if st.button("✅ Generate ID"):
-                prefix = "admin_" if acc_type == "Admin Account" else "user_"
-                full_id = f"{prefix}{raw_name.lower().replace(' ', '')}"
-                
-                if full_id not in st.session_state.db["users"]:
-                    new_role = "admin" if acc_type == "Admin Account" else "user"
-                    st.session_state.db["users"][full_id] = {"pwd": "1234", "role": new_role, "bal": 0.0, "created_by": u_id}
-                    save_db(st.session_state.db)
-                    st.success(f"Account Created: {full_id} | Pass: 1234")
-                else: st.error("ID already exists!")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Virtual Balance", f"₹{st.session_state.balance:,.2f}")
 
+# Fetch Price Data
+with st.spinner("Fetching Live Prices..."):
+    data = yf.Ticker(ticker).history(period="1d", interval="1m")
+    if not data.empty:
+        live_price = data['Close'].iloc[-1]
         with col2:
-            st.subheader("Existing Accounts")
-            all_users = list(st.session_state.db["users"].keys())
-            target = st.selectbox("Select ID to Manage", [x for x in all_users if x not in ["asifnagdade", "affanwadekar"]])
-            
-            if st.button("Reset Password (1234)"):
-                st.session_state.db["users"][target]["pwd"] = "1234"
-                save_db(st.session_state.db); st.info("Password Reset")
-            
-            if st.button("🗑️ Permanent Delete ID"):
-                del st.session_state.db["users"][target]
-                save_db(st.session_state.db); st.warning("User Deleted"); st.rerun()
+            st.metric("Live Price", f"₹{live_price:,.2f}")
+        with col3:
+            price_change = live_price - data['Open'].iloc[0]
+            st.metric("Today's Change", f"{price_change:,.2f}", delta=f"{price_change:,.2f}")
+    else:
+        st.error("Market is currently closed or Data Unavailable.")
+        live_price = 0
 
-    # --- FUND MANAGEMENT ---
-    elif menu == "Fund Management":
-        st.header("💰 Fund Management (Pay-in/Out)")
-        target_f = st.selectbox("Select User ID", list(st.session_state.db["users"].keys()))
-        curr_bal = st.session_state.db["users"][target_f]["bal"]
-        st.metric("Current Balance", f"₹{curr_bal}")
-        
-        amt = st.number_input("Amount (+ for Pay-in, - for Payout)", step=100.0)
-        remark = st.text_input("Remark (e.g. Cash, Bank Transfer)")
-        
-        if st.button("Update Funds"):
-            st.session_state.db["users"][target_f]["bal"] += amt
-            # Record in Ledger
-            if target_f not in st.session_state.db["ledger"]: st.session_state.db["ledger"][target_f] = []
-            st.session_state.db["ledger"][target_f].append({
-                "date": str(datetime.now()), "type": "Fund Update", "amt": amt, "remark": remark
-            })
-            save_db(st.session_state.db); st.success("Balance Updated!")
+# --- TRADING SECTION ---
+st.divider()
+t_col1, t_col2 = st.columns(2)
 
-    # --- ORDER MANAGEMENT ---
-    elif menu == "Live Orders & Deletion":
-        st.header("📋 Order Management (Monitor & Delete)")
-        # Logic to list all trades across users with a Delete Button for each.
-        st.info("Active trades across all users will appear here. Admin can delete any 'Wrong Trade'.")
+with t_col1:
+    st.subheader("Place Order")
+    qty = st.number_input("Quantity (Lots)", min_value=1, value=1, step=1)
+    trade_type = st.radio("Order Type", ["BUY (Long)", "SELL (Short)"], horizontal=True)
+    
+    if st.button("EXECUTE ORDER"):
+        if live_price > 0:
+            cost = live_price * qty
+            if st.session_state.balance >= cost:
+                st.session_state.balance -= cost
+                st.session_state.trades.append({
+                    "Time": datetime.now().strftime("%H:%M:%S"),
+                    "Asset": asset_name,
+                    "Type": trade_type,
+                    "Price": round(live_price, 2),
+                    "Qty": qty
+                })
+                st.success(f"Order Placed: {trade_type} {qty} units of {asset_name}")
+            else:
+                st.error("Insufficient Funds!")
+        else:
+            st.warning("Cannot trade when price is 0 (Market Closed).")
 
-    # --- PNL TRACKER ---
-    elif menu == "PNL Tracker":
-        st.header("📈 All User PNL Report")
-        st.write("Summary of 30% Brokerage Income for Admins & Master PNL.")
+with t_col2:
+    st.subheader("Trade History")
+    if st.session_state.trades:
+        df = pd.DataFrame(st.session_state.trades)
+        st.table(df.tail(5))
+    else:
+        st.info("No trades executed yet.")
 
-    # --- SETTINGS ---
-    elif menu == "Settings":
-        st.subheader("Change Master Password")
-        new_p = st.text_input("New Password", type="password")
-        if st.button("Update Master Password"):
-            st.session_state.db["users"][u_id]["pwd"] = new_p
-            save_db(st.session_state.db); st.success("Password Updated!")
-
-    if st.sidebar.button("🚪 Logout"):
-        del st.session_state.logged_in_user; st.rerun()
-
-# --- 5. ADMIN INTERFACE (To be detailed by you later) ---
-elif u_role == "admin":
-    st.title(f"Admin Dashboard: {u_id}")
-    st.write("Welcome Admin. You can create users and earn 30% brokerage.")
-    if st.button("Logout"): del st.session_state.logged_in_user; st.rerun()
+# --- FOOTER ---
+st.sidebar.divider()
+st.sidebar.warning("⚠️ EDUCATIONAL ONLY: This is a Paper Trading app for Strategy Testing. No real money involved.")
