@@ -1,139 +1,141 @@
 import streamlit as st
 import json
 import os
-import pandas as pd
 from datetime import datetime
 
 # --- 1. PERMANENT DATABASE ENGINE ---
-DB_FILE = "kite_replica_db.json"
+DB_FILE = "master_trading_db.json"
 
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f: return json.load(f)
+    # Initial Master Accounts
     return {
-        "users": {"asifnagdade": {"pwd": "Khadija@12", "role": "admin", "bal": 100000.0}},
-        "portfolio": [], "history": []
+        "users": {
+            "affanwadekar": {"pwd": "1234", "role": "master", "bal": 0.0},
+            "asifnagdade": {"pwd": "1234", "role": "master", "bal": 0.0}
+        },
+        "orders": {}, # Format: {user_id: [trade_list]}
+        "ledger": {}, # Format: {user_id: [transaction_list]}
+        "pnl_reports": {}
     }
 
 def save_db(data):
-    with open(DB_FILE, "w") as f: json.dump(data, f)
+    with open(DB_FILE, "w") as f: json.dump(data, f, indent=4)
 
 if 'db' not in st.session_state:
     st.session_state.db = load_db()
 
-# --- 2. ZERODHA STYLING (KITE BLUE & WHITE) ---
-st.set_page_config(page_title="Kite Replica", layout="wide")
-st.markdown("""
-    <style>
-    .stApp { background-color: #fff; color: #444; }
-    .header { background: #fff; border-bottom: 1px solid #eee; padding: 10px 20px; display: flex; justify-content: space-between; }
-    .watchlist-item { border-bottom: 1px solid #eee; padding: 12px; display: flex; justify-content: space-between; cursor: pointer; }
-    .watchlist-item:hover { background: #fcfcfc; }
-    .buy-btn { background-color: #4184f3; color: white; border: none; border-radius: 3px; padding: 5px 15px; }
-    .sell-btn { background-color: #ff5722; color: white; border: none; border-radius: 3px; padding: 5px 15px; }
-    .price-up { color: #4caf50; }
-    .price-down { color: #df514c; }
-    </style>
-""", unsafe_allow_html=True)
+# --- 2. UI SETUP ---
+st.set_page_config(page_title="Master Control Panel", layout="wide")
 
-# --- 3. LOGIN SYSTEM (STABLE) ---
-if 'user' not in st.session_state:
-    st.markdown("<h2 style='text-align: center; color: #ff5722;'>Kite</h2>", unsafe_allow_html=True)
-    with st.container():
-        u = st.text_input("User ID (Client ID)").strip()
-        p = st.text_input("Password", type="password").strip()
-        if st.button("Login", use_container_width=True):
-            db = st.session_state.db["users"]
-            if u in db and db[u]["pwd"] == p:
-                st.session_state.user = u
-                st.rerun()
-            else: st.error("Invalid credentials")
+# --- 3. LOGIN SYSTEM ---
+if 'logged_in_user' not in st.session_state:
+    st.title("🔐 Master/Admin Login")
+    u = st.text_input("Username (Master/Admin)").strip()
+    p = st.text_input("Password", type="password").strip()
+    if st.button("Access Dashboard", use_container_width=True):
+        db = st.session_state.db["users"]
+        if u in db and db[u]["pwd"] == p:
+            st.session_state.logged_in_user = u
+            st.rerun()
+        else: st.error("Access Denied: Invalid Credentials")
     st.stop()
 
-u_id = st.session_state.user
+u_id = st.session_state.logged_in_user
 u_role = st.session_state.db["users"][u_id]["role"]
 
-# --- 4. ADMIN PANEL (FULL CONTROL & DELETE) ---
-if u_role == "admin":
-    st.sidebar.title("Kite Admin")
-    menu = st.sidebar.radio("Menu", ["User Management", "Live Trades", "Master History", "Logout"])
+# --- 4. MASTER DASHBOARD (Affan & Asif) ---
+if u_role == "master":
+    st.sidebar.title("⭐ Master Control")
+    st.sidebar.write(f"Logged in: **{u_id}**")
     
-    if menu == "Logout":
-        del st.session_state.user; st.rerun()
+    menu = st.sidebar.radio("Master Menu", [
+        "User Management", 
+        "Fund Management", 
+        "Live Orders & Deletion", 
+        "PNL Tracker", 
+        "Global Order Book",
+        "Settings"
+    ])
 
+    # --- USER MANAGEMENT ---
     if menu == "User Management":
-        st.subheader("Manage Client IDs")
-        c1, c2 = st.columns(2)
-        with c1:
-            new_u = st.text_input("New Client ID")
-            if st.button("Create ID"):
-                if new_u and new_u not in st.session_state.db["users"]:
-                    st.session_state.db["users"][new_u] = {"pwd": "1234", "role": "user", "bal": 0.0}
+        st.header("👤 User & Admin Management")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Create New Account")
+            acc_type = st.radio("Account Type", ["Admin Account", "User Account"])
+            raw_name = st.text_input("Enter Name (e.g. sami, chetan)")
+            
+            if st.button("✅ Generate ID"):
+                prefix = "admin_" if acc_type == "Admin Account" else "user_"
+                full_id = f"{prefix}{raw_name.lower().replace(' ', '')}"
+                
+                if full_id not in st.session_state.db["users"]:
+                    new_role = "admin" if acc_type == "Admin Account" else "user"
+                    st.session_state.db["users"][full_id] = {"pwd": "1234", "role": new_role, "bal": 0.0, "created_by": u_id}
                     save_db(st.session_state.db)
-                    st.success(f"ID {new_u} Created (Saved to File)")
-                else: st.error("ID exists or empty")
-        with c2:
-            rem_u = st.selectbox("Select User to Delete", [k for k in st.session_state.db["users"].keys() if k != "asifnagdade"])
-            if st.button("🗑️ DELETE ID PERMANENTLY"):
-                del st.session_state.db["users"][rem_u]
+                    st.success(f"Account Created: {full_id} | Pass: 1234")
+                else: st.error("ID already exists!")
+
+        with col2:
+            st.subheader("Existing Accounts")
+            all_users = list(st.session_state.db["users"].keys())
+            target = st.selectbox("Select ID to Manage", [x for x in all_users if x not in ["asifnagdade", "affanwadekar"]])
+            
+            if st.button("Reset Password (1234)"):
+                st.session_state.db["users"][target]["pwd"] = "1234"
+                save_db(st.session_state.db); st.info("Password Reset")
+            
+            if st.button("🗑️ Permanent Delete ID"):
+                del st.session_state.db["users"][target]
                 save_db(st.session_state.db); st.warning("User Deleted"); st.rerun()
 
-    elif menu == "Live Trades":
-        st.subheader("Force Delete Live Positions")
-        # Logic to list and delete items from st.session_state.db["portfolio"]
-
-# --- 5. CLIENT REPLICA (ZERODHA INTERFACE) ---
-else:
-    # Top Bar
-    st.markdown(f"""
-        <div class="header">
-            <div style="color: #ff5722; font-weight: bold; font-size: 20px;">KITE</div>
-            <div>Dashboard | Orders | <b>Holdings</b> | Positions | Funds</div>
-            <div style="color: #666;">ID: {u_id} | <span style="color: #4184f3;">₹{st.session_state.db['users'][u_id]['bal']}</span></div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    col_watch, col_trade = st.columns([1, 2])
-
-    with col_watch:
-        st.markdown("### Marketwatch")
-        st.text_input("🔍 Search eg: NIFTY APR FUT", label_visibility="collapsed")
+    # --- FUND MANAGEMENT ---
+    elif menu == "Fund Management":
+        st.header("💰 Fund Management (Pay-in/Out)")
+        target_f = st.selectbox("Select User ID", list(st.session_state.db["users"].keys()))
+        curr_bal = st.session_state.db["users"][target_f]["bal"]
+        st.metric("Current Balance", f"₹{curr_bal}")
         
-        # Example Future Contracts (CFT Dabba Style)
-        scripts = [
-            {"name": "CRUDEOIL APR FUT", "price": "7124.00", "change": "+0.45%"},
-            {"name": "GOLD JUNE FUT", "price": "72450.00", "change": "-0.12%"},
-            {"name": "NIFTY APR FUT", "price": "22540.10", "change": "+0.85%"}
-        ]
+        amt = st.number_input("Amount (+ for Pay-in, - for Payout)", step=100.0)
+        remark = st.text_input("Remark (e.g. Cash, Bank Transfer)")
         
-        for s in scripts:
-            st.markdown(f"""
-                <div class="watchlist-item">
-                    <span><b>{s['name']}</b></span>
-                    <span class="price-up">{s['price']} ({s['change']})</span>
-                </div>
-            """, unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            if c1.button(f"BUY", key=f"b_{s['name']}"): st.session_state.trade_type = "BUY"
-            if c2.button(f"SELL", key=f"s_{s['name']}"): st.session_state.trade_type = "SELL"
+        if st.button("Update Funds"):
+            st.session_state.db["users"][target_f]["bal"] += amt
+            # Record in Ledger
+            if target_f not in st.session_state.db["ledger"]: st.session_state.db["ledger"][target_f] = []
+            st.session_state.db["ledger"][target_f].append({
+                "date": str(datetime.now()), "type": "Fund Update", "amt": amt, "remark": remark
+            })
+            save_db(st.session_state.db); st.success("Balance Updated!")
 
-    with col_trade:
-        st.markdown("### Order Window (Futures Only)")
-        st.info("Trading Rule: Only Future Contracts | Custom Quantity Enabled")
-        
-        # Order Form
-        with st.form("trade_form"):
-            st.write("**NIFTY APR FUT**")
-            qty = st.number_input("Qty (Units)", min_value=1, value=50)
-            price_type = st.radio("Type", ["Market", "Limit"], horizontal=True)
-            
-            # Zerodha Style Buttons
-            if st.form_submit_button("PLACE ORDER", use_container_width=True):
-                st.success(f"Order Placed: {qty} Units @ Market")
+    # --- ORDER MANAGEMENT ---
+    elif menu == "Live Orders & Deletion":
+        st.header("📋 Order Management (Monitor & Delete)")
+        # Logic to list all trades across users with a Delete Button for each.
+        st.info("Active trades across all users will appear here. Admin can delete any 'Wrong Trade'.")
 
-    # Side Menu / Funds
-    with st.sidebar:
-        st.error("⚠️ NO SCREENSHOT, NO FUNDS (+965 69304925)")
-        st.button("📜 Ledger")
-        st.button("📊 Trade Logs")
-        if st.button("Logout"): del st.session_state.user; st.rerun()
+    # --- PNL TRACKER ---
+    elif menu == "PNL Tracker":
+        st.header("📈 All User PNL Report")
+        st.write("Summary of 30% Brokerage Income for Admins & Master PNL.")
+
+    # --- SETTINGS ---
+    elif menu == "Settings":
+        st.subheader("Change Master Password")
+        new_p = st.text_input("New Password", type="password")
+        if st.button("Update Master Password"):
+            st.session_state.db["users"][u_id]["pwd"] = new_p
+            save_db(st.session_state.db); st.success("Password Updated!")
+
+    if st.sidebar.button("🚪 Logout"):
+        del st.session_state.logged_in_user; st.rerun()
+
+# --- 5. ADMIN INTERFACE (To be detailed by you later) ---
+elif u_role == "admin":
+    st.title(f"Admin Dashboard: {u_id}")
+    st.write("Welcome Admin. You can create users and earn 30% brokerage.")
+    if st.button("Logout"): del st.session_state.logged_in_user; st.rerun()
